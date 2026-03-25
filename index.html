@@ -1,0 +1,32 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini CS Web</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <section class="hud" aria-label="Game HUD">
+      <div class="stat"><span>HP</span><strong id="hp">100</strong></div>
+      <div class="stat"><span>Ammo</span><strong id="ammo">30 / 90</strong></div>
+      <div class="stat"><span>Enemies</span><strong id="enemies">0</strong></div>
+      <div class="stat"><span>Time</span><strong id="timer">90</strong></div>
+      <button id="restart" type="button">Restart</button>
+    </section>
+
+    <section class="stage-wrap">
+      <canvas id="stage" width="960" height="540" aria-label="Mini CS Game"></canvas>
+      <div id="message" class="message">Click to Start</div>
+    </section>
+
+    <section class="help" aria-label="Controls">
+      <p><strong>Controls:</strong> Click canvas to lock mouse, WASD move, Mouse look, Left click shoot, R reload, Shift sprint</p>
+      <p><strong>Combat:</strong> Aim with center crosshair. Headshot deals much higher damage and has a special kill sound. A 2D minimap is shown at top-right.</p>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
