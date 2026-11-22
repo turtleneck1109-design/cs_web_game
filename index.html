@@ -1,32 +1,71 @@
-﻿<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mini CS Web</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <main class="app">
-    <section class="hud" aria-label="Game HUD">
-      <div class="stat"><span>HP</span><strong id="hp">100</strong></div>
-      <div class="stat"><span>Ammo</span><strong id="ammo">30 / 90</strong></div>
-      <div class="stat"><span>Enemies</span><strong id="enemies">0</strong></div>
-      <div class="stat"><span>Time</span><strong id="timer">90</strong></div>
-      <button id="restart" type="button">Restart</button>
-    </section>
-
-    <section class="stage-wrap">
-      <canvas id="stage" width="960" height="540" aria-label="Mini CS Game"></canvas>
-      <div id="message" class="message">Click to Start</div>
-    </section>
-
-    <section class="help" aria-label="Controls">
-      <p><strong>Controls:</strong> Click canvas to lock mouse, WASD move, Mouse look, Left click shoot, R reload, Shift sprint</p>
-      <p><strong>Combat:</strong> Aim with center crosshair. Headshot deals much higher damage and has a special kill sound. A 2D minimap is shown at top-right.</p>
-    </section>
-  </main>
-
-  <script src="game.js"></script>
-</body>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>沙港训练场 · Mini CS</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand"><i aria-hidden="true"></i> MINI CS</div>
+        <span class="mode">单人训练</span
+        ><button id="restart" class="quiet">↻　重新开始</button>
+      </header>
+      <section id="arena" data-mode="ready" aria-label="沙港训练场">
+        <canvas
+          id="world"
+          width="1280"
+          height="720"
+          aria-hidden="true"
+        ></canvas>
+        <canvas
+          id="stage"
+          width="1280"
+          height="720"
+          aria-label="训练场第一人称视野"
+          tabindex="0"
+        ></canvas>
+        <div class="hud" aria-label="对局状态">
+          <div class="round">
+            <span>剩余时间 <b id="timer"></b></span
+            ><span>目标 <b id="enemies"></b></span>
+          </div>
+          <div class="health">
+            <small>生命</small><b id="hp"></b>
+            <div class="track"><i id="health-bar"></i></div>
+          </div>
+          <div class="ammo">
+            <small>弹药</small><b id="ammo"></b> <span id="reserve"></span>
+          </div>
+        </div>
+        <div id="message" class="brief">
+          <div class="brief-body">
+            <div class="eyebrow" id="mission-label">训练地图 / SANDPORT</div>
+            <h1 id="mission-title">沙港训练场</h1>
+            <p id="mission-info">在 100 秒内清除场内的 8 个目标。</p>
+            <button id="start">
+              进入训练 <span aria-hidden="true">→</span>
+            </button>
+            <details id="controls">
+              <summary>操作说明</summary>
+              <p>
+                <kbd>W A S D</kbd> 移动　<kbd>Shift</kbd> 冲刺　<kbd>R</kbd>
+                换弹<br />移动鼠标转向，左键射击，<kbd>Esc</kbd> 暂停。
+              </p>
+            </details>
+            <p id="input-error" role="status"></p>
+          </div>
+        </div>
+      </section>
+      <footer>
+        <span><i></i> 沙港训练场</span
+        ><span>键盘 + 鼠标 <em>/</em> <kbd>ESC</kbd> 暂停</span>
+      </footer>
+    </main>
+    <script src="depot.js"></script>
+    <script src="equipment.js"></script>
+    <script src="game.js"></script>
+  </body>
 </html>
