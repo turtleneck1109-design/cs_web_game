@@ -57,13 +57,11 @@ const missionTitle = document.getElementById("mission-title");
 const missionInfo = document.getElementById("mission-info");
 const missionLabel = document.getElementById("mission-label");
 const inputError = document.getElementById("input-error");
-const sprite = makeTargetSprite();
-let opponentLayers = prepareOpponentLayers(sprite, true);
-const detailedOpponent = document.getElementById("training-opponent");
-detailedOpponent
+const costume = document.getElementById("training-opponent");
+costume
   .decode()
   .then(() => {
-    opponentLayers = prepareOpponentLayers(detailedOpponent);
+    opponentModel.loadFabric(costume);
     needsFrame = true;
   })
   .catch(() => {});
@@ -328,7 +326,7 @@ function enemyScreenData(enemy) {
   const h = syFeet - syTop;
   if (h <= 2) return null;
 
-  const w = (h * sprite.width) / sprite.height;
+  const w = h * 0.43;
   return {
     sx,
     syTop,
@@ -353,6 +351,7 @@ function spawnEnemies() {
   ];
 
   for (const [x, z] of spots) {
+    const heading = rand(-Math.PI, Math.PI);
     enemies.push({
       x,
       z,
@@ -360,9 +359,9 @@ function spawnEnemies() {
       alive: true,
       speed: rand(1.2, 2.0),
       shootCd: rand(0.3, 1.3),
-      wanderDir: rand(0, Math.PI * 2),
+      wanderDir: heading,
       wanderT: rand(0.4, 1.3),
-      gait: makeOpponentFootwork(),
+      gait: makeOpponentFootwork(x, z, heading),
     });
   }
 }
@@ -597,7 +596,13 @@ function updateEnemies(dt) {
 
     const oldX = enemy.x,
       oldZ = enemy.z;
-    moveEntity(enemy, vx * enemy.speed * dt, vz * enemy.speed * dt, 0.22);
+    steerOpponent(
+      enemy,
+      vx,
+      vz,
+      canSee && dist < 11 ? Math.atan2(dz, dx) : null,
+      dt,
+    );
 
     // Keep a small personal space so enemies don't pop directly into the camera.
     const pdx = enemy.x - player.x;
@@ -605,7 +610,7 @@ function updateEnemies(dt) {
     const minDist = 0.95;
     const curDist = Math.hypot(pdx, pdz);
     if (curDist < minDist && curDist > 0.0001) {
-      const push = (minDist - curDist) * 0.6;
+      const push = Math.min((minDist - curDist) * 0.6, 1.8 * dt);
       enemy.x += (pdx / curDist) * push;
       enemy.z += (pdz / curDist) * push;
       if (collides(enemy.x, enemy.z, 0.22)) {
@@ -750,11 +755,14 @@ function renderEnemies() {
   for (const { enemy, s } of targets) {
     const left = s.sx - s.w / 2,
       h = s.syFeet - s.syTop;
-    const pose = projectOpponentPose(enemy, s);
-    const start = Math.max(0, Math.floor(pose.bounds.left)),
-      end = Math.min(W, Math.ceil(pose.bounds.right));
-    if (start >= end) continue;
-    // Clip the sprite one strip at a time against the exact wall and low-cover silhouettes.
+    // Broad bounds include extended legs and the backpack. Reject hidden actors
+    // before transforming the mesh, while preserving the strip mask at doorways.
+    const start = Math.max(0, Math.floor(s.sx - s.w * 1.8)),
+      end = Math.min(W, Math.ceil(s.sx + s.w * 1.8));
+    if (start >= end || s.syFeet + h * 0.45 < 0 || s.syTop - h * 0.25 > H)
+      continue;
+    const top = s.syTop - h * 0.25;
+    let visible = false;
     ctx.save();
     ctx.beginPath();
     for (let x = start; x < end; x += 2) {
@@ -767,7 +775,7 @@ function renderEnemies() {
         if (x + 1 < W) depthBuffer[x + 1] = depthBuffer[x];
       }
       if (s.depth > depthBuffer[x] + 0.015) continue;
-      let bottom = pose.bounds.bottom + Math.max(2, s.w * 0.105);
+      let bottom = s.syFeet + h * 0.45;
       for (const block of cover) {
         const d = crateDistance(block, dx, dz);
         if (d < s.depth)
@@ -776,10 +784,17 @@ function renderEnemies() {
             horizon + ((player.eye / TILE - block.h) * PROJ) / d,
           );
       }
-      if (bottom > pose.bounds.top)
-        ctx.rect(x, pose.bounds.top, 2, bottom - pose.bounds.top);
+      if (bottom > top) {
+        ctx.rect(x, top, 2, bottom - top);
+        visible = true;
+      }
+    }
+    if (!visible) {
+      ctx.restore();
+      continue;
     }
     ctx.clip();
+    const pose = opponentModel.project(enemy);
     ctx.fillStyle = "rgba(56,49,33,.25)";
     ctx.beginPath();
     ctx.ellipse(
@@ -807,7 +822,7 @@ function renderEnemies() {
       );
       ctx.fill();
     }
-    drawOpponentPose(ctx, s, pose, opponentLayers);
+    opponentModel.draw(ctx, pose);
     if (enemy.hp < 100) {
       ctx.fillStyle = "#282f29";
       ctx.fillRect(left, s.syTop, s.w, 3);
@@ -964,7 +979,7 @@ function loop(now) {
     // Keep the round clock on wall time and substep movement after a slow frame.
     state.timeLeft = Math.max(0, state.timeLeft - elapsed);
     let remaining = Math.min(elapsed, 0.18);
-    while (remaining > 0 && state.running) {
+    while (remaining > 1e-8 && state.running) {
       const step = Math.min(remaining, 1 / 60);
       updateGame(step);
       remaining -= step;
