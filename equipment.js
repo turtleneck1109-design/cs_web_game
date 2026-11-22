@@ -18,6 +18,22 @@ function drawCarbine(ctx, width, height, player, moving) {
     ctx.closePath();
     ctx.fill();
   }
+  const model = document.getElementById("training-blaster");
+  if (model.complete && model.naturalWidth) {
+    const w = 488,
+      h = (w * model.naturalHeight) / model.naturalWidth;
+    ctx.drawImage(model, -62, -43, w, h);
+    if (kick > 0.77) {
+      const glow = ctx.createRadialGradient(-1, -10, 1, -1, -10, 24);
+      glow.addColorStop(0, "#fff6be");
+      glow.addColorStop(0.27, "#ffd988d9");
+      glow.addColorStop(1, "#ffac3700");
+      ctx.fillStyle = glow;
+      ctx.fillRect(-25, -34, 48, 48);
+    }
+    ctx.restore();
+    return;
+  }
   // Muzzle, front sight, handguard, receiver, rear sight and gloved hands.
   face("#262d2b", [
     [-8, -3],

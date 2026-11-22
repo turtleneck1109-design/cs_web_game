@@ -58,10 +58,20 @@ const missionInfo = document.getElementById("mission-info");
 const missionLabel = document.getElementById("mission-label");
 const inputError = document.getElementById("input-error");
 const sprite = makeTargetSprite();
+const detailedOpponent = document.getElementById("training-opponent");
+detailedOpponent
+  .decode()
+  .then(() => {
+    needsFrame = true;
+  })
+  .catch(() => {});
 const worldCanvas = document.getElementById("world");
 let depot = null;
 try {
-  depot = createDepot(worldCanvas, worldMap, TILE);
+  depot = createDepot(worldCanvas, worldMap, TILE, () => {
+    lastView.width = 0;
+    needsFrame = true;
+  });
 } catch (error) {
   console.warn("Using the canvas renderer", error);
 }
@@ -776,7 +786,15 @@ function renderEnemies() {
       2 * Math.PI,
     );
     ctx.fill();
-    ctx.drawImage(sprite, left, s.syTop, s.w, h);
+    ctx.drawImage(
+      detailedOpponent.complete && detailedOpponent.naturalWidth
+        ? detailedOpponent
+        : sprite,
+      left,
+      s.syTop,
+      s.w,
+      h,
+    );
     if (enemy.hp < 100) {
       ctx.fillStyle = "#282f29";
       ctx.fillRect(left, s.syTop, s.w, 3);
