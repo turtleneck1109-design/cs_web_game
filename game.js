@@ -1,16 +1,16 @@
-﻿const canvas = document.getElementById("stage");
+const canvas = document.getElementById("stage");
 const ctx = canvas.getContext("2d");
 
 const hpEl = document.getElementById("hp");
 const ammoEl = document.getElementById("ammo");
 const enemiesEl = document.getElementById("enemies");
 const timerEl = document.getElementById("timer");
-const messageEl = document.getElementById("message");
 const restartBtn = document.getElementById("restart");
 
 const W = canvas.width;
 const H = canvas.height;
-const FOV = Math.PI / 3;
+const FOV = Math.PI * 0.405;
+const TILE = 2.75;
 const PROJ = W / (2 * Math.tan(FOV / 2));
 const MAX_DIST = 24;
 
@@ -49,12 +49,36 @@ const state = {
   hitTextTimer: 0,
 };
 
+const arena = document.getElementById("arena");
+const startButton = document.getElementById("start");
+const reserveEl = document.getElementById("reserve");
+const healthBar = document.getElementById("health-bar");
+const missionTitle = document.getElementById("mission-title");
+const missionInfo = document.getElementById("mission-info");
+const missionLabel = document.getElementById("mission-label");
+const inputError = document.getElementById("input-error");
+const sprite = makeTargetSprite();
+const worldCanvas = document.getElementById("world");
+let depot = null;
+try {
+  depot = createDepot(worldCanvas, worldMap, TILE);
+} catch (error) {
+  console.warn("Using the canvas renderer", error);
+}
+worldCanvas.addEventListener("webglcontextlost", () => {
+  depot = null;
+  cover.length = 0;
+  needsFrame = true;
+});
+let needsFrame = true;
+const cover = depot?.cover || [];
+
 const keys = new Set();
 const mouse = { down: false };
 
 const player = {
-  x: 2.6,
-  z: 2.6,
+  x: 2.9,
+  z: 4.18,
   yaw: 0,
   pitch: 0,
   eye: 1.6,
@@ -74,6 +98,7 @@ const player = {
 const enemies = [];
 const depthBuffer = new Float32Array(W);
 
+let pendingLock = false;
 let last = performance.now();
 let audioCtx = null;
 
@@ -133,6 +158,11 @@ function isWall(x, z) {
 }
 
 function collides(x, z, radius) {
+  for (const block of cover) {
+    const dx = x - clamp(x, block.x, block.x + block.w);
+    const dz = z - clamp(z, block.z, block.z + block.d);
+    if (dx * dx + dz * dz < radius * radius) return true;
+  }
   const minX = Math.floor(x - radius);
   const maxX = Math.floor(x + radius);
   const minZ = Math.floor(z - radius);
@@ -140,7 +170,13 @@ function collides(x, z, radius) {
 
   for (let mz = minZ; mz <= maxZ; mz += 1) {
     for (let mx = minX; mx <= maxX; mx += 1) {
-      if (mx < 0 || mz < 0 || mx >= MAP_W || mz >= MAP_H || worldMap[mz][mx] === "#") {
+      if (
+        mx < 0 ||
+        mz < 0 ||
+        mx >= MAP_W ||
+        mz >= MAP_H ||
+        worldMap[mz][mx] === "#"
+      ) {
         const nearestX = clamp(x, mx, mx + 1);
         const nearestZ = clamp(z, mz, mz + 1);
         const dx = x - nearestX;
@@ -270,14 +306,17 @@ function enemyScreenData(enemy) {
   const yBodyTop = 1.28;
   const yFeet = 0.0;
 
-  const syTop = H * 0.5 - ((yTop - player.eye) / relZ) * PROJ + pitchOffset;
-  const syBodyTop = H * 0.5 - ((yBodyTop - player.eye) / relZ) * PROJ + pitchOffset;
-  const syFeet = H * 0.5 - ((yFeet - player.eye) / relZ) * PROJ + pitchOffset;
+  const syTop =
+    H * 0.5 - ((yTop - player.eye) / (relZ * TILE)) * PROJ + pitchOffset;
+  const syBodyTop =
+    H * 0.5 - ((yBodyTop - player.eye) / (relZ * TILE)) * PROJ + pitchOffset;
+  const syFeet =
+    H * 0.5 - ((yFeet - player.eye) / (relZ * TILE)) * PROJ + pitchOffset;
 
   const h = syFeet - syTop;
   if (h <= 2) return null;
 
-  const w = h * 0.38;
+  const w = (h * sprite.width) / sprite.height;
   return {
     sx,
     syTop,
@@ -291,7 +330,7 @@ function enemyScreenData(enemy) {
 function spawnEnemies() {
   enemies.length = 0;
   const spots = [
-    [14.5, 2.5],
+    [9.4, 4.42],
     [17.2, 5.2],
     [11.8, 7.4],
     [15.4, 9.7],
@@ -317,9 +356,13 @@ function spawnEnemies() {
 
 function updateHud() {
   hpEl.textContent = `${Math.max(0, Math.ceil(player.hp))}`;
-  ammoEl.textContent = `${player.ammo} / ${player.reserve}`;
+  ammoEl.textContent = player.ammo;
+  reserveEl.textContent = "/ " + player.reserve;
+  healthBar.style.width = Math.max(0, player.hp) + "%";
   enemiesEl.textContent = `${enemies.filter((e) => e.alive).length}`;
-  timerEl.textContent = `${Math.max(0, Math.ceil(state.timeLeft))}`;
+  const seconds = Math.max(0, Math.ceil(state.timeLeft));
+  timerEl.textContent =
+    Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
 }
 
 function showHitText(text) {
@@ -328,10 +371,10 @@ function showHitText(text) {
 }
 
 function resetGame() {
-  player.x = 2.6;
-  player.z = 2.6;
-  player.yaw = 0;
-  player.pitch = 0;
+  player.x = 2.9;
+  player.z = 4.18;
+  player.yaw = -0.1;
+  player.pitch = 0.045;
   player.hp = 100;
   player.ammo = 30;
   player.reserve = 120;
@@ -348,8 +391,13 @@ function resetGame() {
   spawnEnemies();
   updateHud();
 
-  messageEl.textContent = "Click Canvas to Start (Mouse Lock)";
-  messageEl.classList.remove("hidden");
+  setScreen(
+    "ready",
+    "沙港训练场",
+    "在 100 秒内清除场内的 8 个目标。",
+    "进入训练",
+  );
+  document.getElementById("controls").open = false;
 }
 
 function startReload() {
@@ -385,7 +433,7 @@ function applyShot() {
     if (!lineOfSight(player.x, player.z, enemy.x, enemy.z)) continue;
 
     const sampleX = clamp(Math.floor(s.sx), 0, W - 1);
-    if (s.depth > depthBuffer[sampleX] + 0.06) continue;
+    if (!depot && s.depth > depthBuffer[sampleX] + 0.06) continue;
 
     if (!best || s.depth < best.depth) {
       best = { enemy, s, depth: s.depth };
@@ -394,6 +442,7 @@ function applyShot() {
 
   if (!best) return;
 
+  if (blockedShot(best.depth)) return;
   const isHeadshot = cy <= best.s.syBodyTop;
   const damage = isHeadshot ? 95 : 36;
 
@@ -410,8 +459,14 @@ function applyShot() {
 function endGame(won) {
   state.running = false;
   state.ended = true;
-  messageEl.textContent = won ? "Mission Complete" : "Mission Failed";
-  messageEl.classList.remove("hidden");
+  const cleared = enemies.filter((e) => !e.alive).length;
+  const result = won ? "训练完成" : player.hp <= 0 ? "生命值耗尽" : "时间已到";
+  setScreen(
+    "ended",
+    result,
+    "本轮已清除 " + cleared + " / " + enemies.length + " 个目标。",
+    "再来一局",
+  );
   document.exitPointerLock?.();
 }
 
@@ -431,19 +486,24 @@ function updatePlayer(dt) {
     moveZ -= sin;
   }
   if (keys.has("KeyA")) {
-    moveX -= sin;
-    moveZ += cos;
-  }
-  if (keys.has("KeyD")) {
     moveX += sin;
     moveZ -= cos;
+  }
+  if (keys.has("KeyD")) {
+    moveX -= sin;
+    moveZ += cos;
   }
 
   if (moveX || moveZ) {
     const len = Math.hypot(moveX, moveZ) || 1;
     const sprint = keys.has("ShiftLeft") || keys.has("ShiftRight");
     const speed = player.speed * (sprint ? player.sprintMul : 1);
-    moveEntity(player, (moveX / len) * speed * dt, (moveZ / len) * speed * dt, player.radius);
+    moveEntity(
+      player,
+      (moveX / len) * speed * dt,
+      (moveZ / len) * speed * dt,
+      player.radius,
+    );
   }
 
   if (player.fireCd > 0) player.fireCd -= dt;
@@ -495,13 +555,11 @@ function updateEnemies(dt) {
         let visibleToPlayer = false;
         if (s) {
           const onScreen =
-            s.sx >= -s.w &&
-            s.sx <= W + s.w &&
-            s.syFeet >= 0 &&
-            s.syTop <= H;
+            s.sx >= -s.w && s.sx <= W + s.w && s.syFeet >= 0 && s.syTop <= H;
           if (onScreen) {
             const sampleX = clamp(Math.floor(s.sx), 0, W - 1);
-            visibleToPlayer = s.depth <= depthBuffer[sampleX] + 0.08;
+            visibleToPlayer =
+              Boolean(depot) || s.depth <= depthBuffer[sampleX] + 0.08;
           }
         }
 
@@ -546,10 +604,11 @@ function updateEnemies(dt) {
 function updateGame(dt) {
   if (!state.running) return;
 
-  state.timeLeft -= dt;
   if (state.timeLeft <= 0) {
     state.timeLeft = 0;
     endGame(false);
+    updateHud();
+    return;
   }
 
   if (state.flashTimer > 0) state.flashTimer -= dt;
@@ -570,14 +629,14 @@ function updateGame(dt) {
   updateHud();
 }
 
-function renderWorld() {
+function renderFallback() {
   const pitchOffset = Math.tan(player.pitch) * PROJ;
   const horizonY = clamp(H * 0.5 + pitchOffset, 0, H);
 
   const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
-  sky.addColorStop(0, "#5eb8ff");
-  sky.addColorStop(0.52, "#5f8cff");
-  sky.addColorStop(1, "#f39a66");
+  sky.addColorStop(0, "#8cbec8");
+  sky.addColorStop(0.52, "#b1d1ce");
+  sky.addColorStop(1, "#ead4ae");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, horizonY);
 
@@ -597,9 +656,9 @@ function renderWorld() {
   ctx.fillRect(W * 0.65, horizonY * 0.31, W * 0.11, 5);
 
   const floor = ctx.createLinearGradient(0, horizonY, 0, H);
-  floor.addColorStop(0, "#6a8653");
-  floor.addColorStop(0.46, "#476142");
-  floor.addColorStop(1, "#283629");
+  floor.addColorStop(0, "#c2af91");
+  floor.addColorStop(0.46, "#aa987f");
+  floor.addColorStop(1, "#998269");
   ctx.fillStyle = floor;
   ctx.fillRect(0, horizonY, W, H - horizonY);
 
@@ -622,97 +681,115 @@ function renderWorld() {
     depthBuffer[x] = corrected;
     if (stripe === 2 && x + 1 < W) depthBuffer[x + 1] = corrected;
 
-    const wallH = (1 / Math.max(0.0001, corrected)) * PROJ;
+    const wallH = (3.2 / TILE / Math.max(0.0001, corrected)) * PROJ;
     const yTop = H * 0.5 - wallH * 0.5 + pitchOffset;
 
     const shadeBase = hit.side === 0 ? 182 : 142;
     const distDark = clamp(1 - corrected / MAX_DIST, 0.22, 1);
     const c = Math.floor(shadeBase * distDark);
-    ctx.fillStyle = `rgb(${c - 24}, ${c - 6}, ${c + 20})`;
+    ctx.fillStyle = `rgb(${c + 36}, ${c + 13}, ${c - 17})`;
     ctx.fillRect(x, yTop, stripe + 1, wallH);
+    ctx.fillStyle = "rgba(245,223,189,.5)";
+    ctx.fillRect(x, yTop + wallH * 0.035, stripe + 1, wallH * 0.035);
+    ctx.fillStyle = "rgba(73,98,85,.34)";
+    ctx.fillRect(x, yTop + wallH * 0.77, stripe + 1, wallH * 0.07);
   }
 }
 
+// Intersect a horizontal ray with the near edge of a cargo crate (in map units).
+function crateDistance(block, dx, dz) {
+  const axis = (origin, direction, low, high) => {
+    if (Math.abs(direction) < 1e-7)
+      return origin >= low && origin <= high
+        ? [-Infinity, Infinity]
+        : [Infinity, -Infinity];
+    const a = (low - origin) / direction,
+      b = (high - origin) / direction;
+    return a < b ? [a, b] : [b, a];
+  };
+  const x = axis(player.x, dx, block.x, block.x + block.w),
+    z = axis(player.z, dz, block.z, block.z + block.d);
+  const near = Math.max(0, x[0], z[0]);
+  return near < Math.min(x[1], z[1]) ? near : Infinity;
+}
+
+function blockedShot(depth) {
+  return cover.some((block) => {
+    const d = crateDistance(block, Math.cos(player.yaw), Math.sin(player.yaw));
+    return (
+      d < depth && player.eye / TILE + Math.tan(player.pitch) * d < block.h
+    );
+  });
+}
+
 function renderEnemies() {
-  const projected = [];
-  for (const enemy of enemies) {
-    if (!enemy.alive) continue;
-    const s = enemyScreenData(enemy);
-    if (!s) continue;
-    projected.push({ enemy, s });
-  }
-
-  projected.sort((a, b) => b.s.depth - a.s.depth);
-
-  for (const item of projected) {
-    const { s } = item;
-    const x0 = Math.floor(s.sx - s.w * 0.5);
-    const x1 = Math.floor(s.sx + s.w * 0.5);
-
-    if (x1 < 0 || x0 >= W) continue;
-
-    const sampleX = clamp(Math.floor(s.sx), 0, W - 1);
-    if (s.depth > depthBuffer[sampleX] + 0.05) continue;
-
-    const width = x1 - x0;
-    const headH = Math.max(5, s.syBodyTop - s.syTop);
-    const bodyH = Math.max(8, s.syFeet - s.syBodyTop);
-    const centerX = s.sx;
-    const bodyTop = s.syBodyTop;
-    const bodyBottom = s.syFeet;
-    const shoulderW = width * 0.86;
-    const torsoW = width * 0.62;
-    const hipW = width * 0.54;
-
-    ctx.fillStyle = "rgba(0,0,0,0.22)";
+  const targets = enemies
+    .filter((e) => e.alive)
+    .map((enemy) => ({ enemy, s: enemyScreenData(enemy) }))
+    .filter(
+      (item) =>
+        item.s && item.s.sx + item.s.w / 2 >= 0 && item.s.sx - item.s.w / 2 < W,
+    )
+    .sort((a, b) => b.s.depth - a.s.depth);
+  const cos = Math.cos(player.yaw),
+    sin = Math.sin(player.yaw);
+  const horizon = H / 2 + Math.tan(player.pitch) * PROJ;
+  for (const { enemy, s } of targets) {
+    const left = s.sx - s.w / 2,
+      h = s.syFeet - s.syTop;
+    const start = Math.max(0, Math.floor(left)),
+      end = Math.min(W, Math.ceil(left + s.w));
+    // Clip the sprite one strip at a time against the exact wall and low-cover silhouettes.
+    ctx.save();
     ctx.beginPath();
-    ctx.ellipse(centerX, bodyBottom + 3, width * 0.35, Math.max(2, width * 0.12), 0, 0, Math.PI * 2);
+    for (let x = start; x < end; x += 2) {
+      const u = (x + 1 - W / 2) / PROJ,
+        dx = cos - u * sin,
+        dz = sin + u * cos;
+      if (depot) {
+        const ray = castRay(player.x, player.z, Math.atan2(dz, dx));
+        depthBuffer[x] = ray.dist / Math.hypot(dx, dz);
+        if (x + 1 < W) depthBuffer[x + 1] = depthBuffer[x];
+      }
+      if (s.depth > depthBuffer[x] + 0.015) continue;
+      let bottom = s.syFeet + Math.max(2, s.w * 0.105);
+      for (const block of cover) {
+        const d = crateDistance(block, dx, dz);
+        if (d < s.depth)
+          bottom = Math.min(
+            bottom,
+            horizon + ((player.eye / TILE - block.h) * PROJ) / d,
+          );
+      }
+      if (bottom > s.syTop) ctx.rect(x, s.syTop, 2, bottom - s.syTop);
+    }
+    ctx.clip();
+    ctx.fillStyle = "rgba(56,49,33,.25)";
+    ctx.beginPath();
+    ctx.ellipse(
+      s.sx,
+      s.syFeet - 1,
+      s.w * 0.44,
+      Math.max(1.5, s.w * 0.09),
+      0,
+      0,
+      2 * Math.PI,
+    );
     ctx.fill();
-
-    const helmetH = headH * 0.44;
-    ctx.fillStyle = "#2a3a46";
-    ctx.fillRect(centerX - width * 0.24, s.syTop, width * 0.48, helmetH);
-
-    const faceGrad = ctx.createLinearGradient(0, s.syTop + helmetH, 0, bodyTop);
-    faceGrad.addColorStop(0, "#f1c39f");
-    faceGrad.addColorStop(1, "#d89973");
-    ctx.fillStyle = faceGrad;
-    ctx.fillRect(centerX - width * 0.2, s.syTop + helmetH, width * 0.4, headH - helmetH);
-
-    ctx.fillStyle = "#89d2ff";
-    ctx.fillRect(centerX - width * 0.15, s.syTop + helmetH + headH * 0.1, width * 0.3, headH * 0.18);
-
-    ctx.fillStyle = "#26343f";
-    ctx.fillRect(centerX - shoulderW * 0.5, bodyTop, shoulderW, bodyH * 0.22);
-    ctx.fillStyle = "#355063";
-    ctx.fillRect(centerX - torsoW * 0.5, bodyTop + bodyH * 0.22, torsoW, bodyH * 0.45);
-    ctx.fillStyle = "#22313a";
-    ctx.fillRect(centerX - hipW * 0.5, bodyTop + bodyH * 0.67, hipW, bodyH * 0.2);
-
-    ctx.fillStyle = "#4f6b78";
-    ctx.fillRect(centerX - width * 0.43, bodyTop + bodyH * 0.18, width * 0.16, bodyH * 0.5);
-    ctx.fillRect(centerX + width * 0.27, bodyTop + bodyH * 0.18, width * 0.16, bodyH * 0.5);
-
-    ctx.fillStyle = "#2f3b48";
-    ctx.fillRect(centerX - width * 0.27, bodyTop + bodyH * 0.78, width * 0.18, bodyH * 0.22);
-    ctx.fillRect(centerX + width * 0.09, bodyTop + bodyH * 0.78, width * 0.18, bodyH * 0.22);
-
-    ctx.strokeStyle = "rgba(10,10,10,0.35)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(centerX - width * 0.24, s.syTop, width * 0.48, headH);
-    ctx.strokeRect(centerX - shoulderW * 0.5, bodyTop, shoulderW, bodyH);
-
-    const hpRatio = clamp(item.enemy.hp / 100, 0, 1);
-    ctx.fillStyle = "rgba(10,10,10,0.85)";
-    ctx.fillRect(x0, s.syTop - 8, x1 - x0, 4);
-    ctx.fillStyle = "#7df07d";
-    ctx.fillRect(x0, s.syTop - 8, (x1 - x0) * hpRatio, 4);
+    ctx.drawImage(sprite, left, s.syTop, s.w, h);
+    if (enemy.hp < 100) {
+      ctx.fillStyle = "#282f29";
+      ctx.fillRect(left, s.syTop, s.w, 3);
+      ctx.fillStyle = "#e9b988";
+      ctx.fillRect(left, s.syTop, (s.w * enemy.hp) / 100, 3);
+    }
+    ctx.restore();
   }
 }
 
 function renderMiniMap() {
-  const scale = 7;
-  const pad = 12;
+  const scale = 5;
+  const pad = 20;
   const mapW = MAP_W * scale;
   const mapH = MAP_H * scale;
   const x0 = W - mapW - pad;
@@ -724,7 +801,7 @@ function renderMiniMap() {
   for (let z = 0; z < MAP_H; z += 1) {
     for (let x = 0; x < MAP_W; x += 1) {
       if (worldMap[z][x] === "#") {
-        ctx.fillStyle = "#7b8ea5";
+        ctx.fillStyle = "#939783";
         ctx.fillRect(x0 + x * scale, y0 + z * scale, scale, scale);
       } else {
         ctx.fillStyle = "rgba(82, 115, 90, 0.35)";
@@ -747,14 +824,14 @@ function renderMiniMap() {
   ctx.lineTo(px + Math.cos(right) * fovLen, pz + Math.sin(right) * fovLen);
   ctx.stroke();
 
-  ctx.fillStyle = "#57ff9d";
+  ctx.fillStyle = "#eef186";
   ctx.beginPath();
   ctx.arc(px, pz, 2.8, 0, Math.PI * 2);
   ctx.fill();
 
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
-    ctx.fillStyle = "#ff5d5d";
+    ctx.fillStyle = "#ed8f6c";
     ctx.beginPath();
     ctx.arc(x0 + enemy.x * scale, y0 + enemy.z * scale, 2.3, 0, Math.PI * 2);
     ctx.fill();
@@ -762,18 +839,6 @@ function renderMiniMap() {
 
   ctx.strokeStyle = "rgba(208, 227, 255, 0.5)";
   ctx.strokeRect(x0 - 0.5, y0 - 0.5, mapW + 1, mapH + 1);
-}
-
-function renderWeapon() {
-  const gunW = 210;
-  const gunH = 130;
-  const sway = Math.sin(performance.now() * 0.006) * 3;
-
-  ctx.fillStyle = "#1a1f27";
-  ctx.fillRect(W * 0.5 - gunW * 0.5 + sway, H - gunH, gunW, gunH);
-
-  ctx.fillStyle = "#2c343e";
-  ctx.fillRect(W * 0.5 - 28 + sway, H - gunH - 18, 56, 30);
 }
 
 function renderCrosshair() {
@@ -801,7 +866,7 @@ function renderOverlays() {
   }
 
   if (player.reloadTimer > 0) {
-    const text = "Reloading...";
+    const text = "换弹中";
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(W * 0.5 - 78, H - 165, 156, 34);
     ctx.fillStyle = "#ffffff";
@@ -814,68 +879,169 @@ function renderOverlays() {
     ctx.fillStyle = "#ffe082";
     ctx.font = "bold 28px Segoe UI";
     ctx.textAlign = "center";
-    ctx.fillText(state.hitText, W * 0.5, H * 0.5 - 42);
+    ctx.fillText(
+      {
+        HIT: "命中",
+        HEADSHOT: "精准命中",
+        KILL: "目标清除",
+        "HEADSHOT KILL": "精准清除",
+      }[state.hitText],
+      W * 0.5,
+      H * 0.5 - 42,
+    );
   }
 }
 
+const lastView = { x: NaN, z: NaN, yaw: NaN, pitch: NaN, width: 0 };
+let slowFrames = 0;
+function drawBackground() {
+  if (
+    lastView.x === player.x &&
+    lastView.z === player.z &&
+    lastView.yaw === player.yaw &&
+    lastView.pitch === player.pitch &&
+    lastView.width === worldCanvas.width
+  )
+    return;
+  depot.draw(player, FOV);
+  for (const key of ["x", "z", "yaw", "pitch"]) lastView[key] = player[key];
+  lastView.width = worldCanvas.width;
+}
+
 function render() {
-  renderWorld();
+  ctx.clearRect(0, 0, W, H);
+  if (depot) drawBackground();
+  else renderFallback();
   renderEnemies();
+  if (!state.running) return;
   renderMiniMap();
-  renderWeapon();
+  drawCarbine(
+    ctx,
+    W,
+    H,
+    player,
+    ["KeyW", "KeyS", "KeyA", "KeyD"].some((key) => keys.has(key)),
+  );
   renderCrosshair();
   renderOverlays();
 }
 
 function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.033);
+  const elapsed = Math.max(0, (now - last) / 1000);
   last = now;
-
-  updateGame(dt);
-  render();
+  if (state.running) {
+    // Keep the round clock on wall time and substep movement after a slow frame.
+    state.timeLeft = Math.max(0, state.timeLeft - elapsed);
+    let remaining = Math.min(elapsed, 0.18);
+    while (remaining > 0 && state.running) {
+      const step = Math.min(remaining, 1 / 60);
+      updateGame(step);
+      remaining -= step;
+    }
+    if (depot && elapsed > 0.044) slowFrames++;
+    else slowFrames = Math.max(0, slowFrames - 1);
+    if (slowFrames >= 7 && worldCanvas.width > 720) {
+      worldCanvas.width = worldCanvas.width === 1280 ? 960 : 720;
+      worldCanvas.height = (worldCanvas.width * 9) / 16;
+      slowFrames = 0;
+    }
+  }
+  if (state.running || needsFrame) {
+    render();
+    needsFrame = false;
+  }
 
   requestAnimationFrame(loop);
 }
 
-canvas.addEventListener("click", () => {
+function setScreen(mode, title, info, button) {
+  arena.dataset.mode = mode;
+  if (worldCanvas.width !== 1280) {
+    worldCanvas.width = 1280;
+    worldCanvas.height = 720;
+  }
+  slowFrames = 0;
+  missionLabel.textContent =
+    mode === "ready" ? "训练地图 / SANDPORT" : "沙港训练场 / SANDPORT";
+  missionTitle.textContent = title;
+  missionInfo.textContent = info;
+  startButton.firstChild.textContent = button + " ";
+  inputError.textContent = "";
+  keys.clear();
+  mouse.down = false;
+  needsFrame = true;
+}
+function pauseGame() {
+  if (!state.running) return;
+  state.running = false;
+  setScreen(
+    "paused",
+    "训练暂停",
+    "剩余目标 " + enemies.filter((e) => e.alive).length + " 个。",
+    "继续训练",
+  );
+}
+function begin() {
+  if (pendingLock || state.running) return;
+  if (state.ended) resetGame();
   ensureAudio();
-
-  if (!state.running && !state.ended) {
+  if (!canvas.requestPointerLock) {
+    inputError.textContent = "请使用支持鼠标锁定的桌面浏览器。";
+    return;
+  }
+  pendingLock = true;
+  try {
+    canvas.requestPointerLock()?.catch(lockError);
+  } catch {
+    lockError();
+  }
+}
+function lockError() {
+  pendingLock = false;
+  inputError.textContent = "浏览器未锁定鼠标，请再次点击进入训练。";
+}
+document.addEventListener("pointerlockerror", lockError);
+document.addEventListener("pointerlockchange", () => {
+  const locked = document.pointerLockElement === canvas;
+  pendingLock = false;
+  if (locked && !state.ended) {
+    canvas.focus();
     state.running = true;
-    messageEl.classList.add("hidden");
-  }
-
-  canvas.requestPointerLock?.();
+    arena.dataset.mode = "playing";
+    needsFrame = true;
+    last = performance.now();
+  } else pauseGame();
 });
-
-window.addEventListener("mousedown", (ev) => {
-  if (ev.button === 0) {
-    mouse.down = true;
-  }
+startButton.addEventListener("click", begin);
+canvas.addEventListener("click", begin);
+canvas.addEventListener("mousedown", (ev) => {
+  if (state.running && ev.button === 0) mouse.down = true;
 });
-
-window.addEventListener("mouseup", (ev) => {
-  if (ev.button === 0) {
-    mouse.down = false;
-  }
+window.addEventListener("mouseup", () => {
+  mouse.down = false;
 });
-
 window.addEventListener("keydown", (ev) => {
+  if (!state.running) return;
   keys.add(ev.code);
   if (ev.code === "KeyR") startReload();
+  if (ev.code === "Escape") {
+    pauseGame();
+    document.exitPointerLock?.();
+  }
 });
-
-window.addEventListener("keyup", (ev) => {
-  keys.delete(ev.code);
+window.addEventListener("keyup", (ev) => keys.delete(ev.code));
+window.addEventListener("blur", () => {
+  pauseGame();
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
 });
-
 document.addEventListener("mousemove", (ev) => {
-  if (document.pointerLockElement !== canvas) return;
+  if (!state.running || document.pointerLockElement !== canvas) return;
   player.yaw += ev.movementX * 0.0025;
   player.pitch = clamp(player.pitch - ev.movementY * 0.0021, -0.52, 0.52);
 });
-
-restartBtn.addEventListener("click", resetGame);
-
+restartBtn.addEventListener("click", () => {
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  resetGame();
+});
 resetGame();
 requestAnimationFrame(loop);
