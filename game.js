@@ -58,10 +58,12 @@ const missionInfo = document.getElementById("mission-info");
 const missionLabel = document.getElementById("mission-label");
 const inputError = document.getElementById("input-error");
 const sprite = makeTargetSprite();
+let opponentLayers = prepareOpponentLayers(sprite, true);
 const detailedOpponent = document.getElementById("training-opponent");
 detailedOpponent
   .decode()
   .then(() => {
+    opponentLayers = prepareOpponentLayers(detailedOpponent);
     needsFrame = true;
   })
   .catch(() => {});
@@ -360,6 +362,7 @@ function spawnEnemies() {
       shootCd: rand(0.3, 1.3),
       wanderDir: rand(0, Math.PI * 2),
       wanderT: rand(0.4, 1.3),
+      gait: makeOpponentFootwork(),
     });
   }
 }
@@ -592,6 +595,8 @@ function updateEnemies(dt) {
       vz = Math.sin(enemy.wanderDir);
     }
 
+    const oldX = enemy.x,
+      oldZ = enemy.z;
     moveEntity(enemy, vx * enemy.speed * dt, vz * enemy.speed * dt, 0.22);
 
     // Keep a small personal space so enemies don't pop directly into the camera.
@@ -608,6 +613,7 @@ function updateEnemies(dt) {
         enemy.z -= (pdz / curDist) * push;
       }
     }
+    updateOpponentFootwork(enemy, oldX, oldZ, dt);
   }
 }
 
@@ -736,10 +742,7 @@ function renderEnemies() {
   const targets = enemies
     .filter((e) => e.alive)
     .map((enemy) => ({ enemy, s: enemyScreenData(enemy) }))
-    .filter(
-      (item) =>
-        item.s && item.s.sx + item.s.w / 2 >= 0 && item.s.sx - item.s.w / 2 < W,
-    )
+    .filter((item) => item.s)
     .sort((a, b) => b.s.depth - a.s.depth);
   const cos = Math.cos(player.yaw),
     sin = Math.sin(player.yaw);
@@ -747,8 +750,10 @@ function renderEnemies() {
   for (const { enemy, s } of targets) {
     const left = s.sx - s.w / 2,
       h = s.syFeet - s.syTop;
-    const start = Math.max(0, Math.floor(left)),
-      end = Math.min(W, Math.ceil(left + s.w));
+    const pose = projectOpponentPose(enemy, s);
+    const start = Math.max(0, Math.floor(pose.bounds.left)),
+      end = Math.min(W, Math.ceil(pose.bounds.right));
+    if (start >= end) continue;
     // Clip the sprite one strip at a time against the exact wall and low-cover silhouettes.
     ctx.save();
     ctx.beginPath();
@@ -762,7 +767,7 @@ function renderEnemies() {
         if (x + 1 < W) depthBuffer[x + 1] = depthBuffer[x];
       }
       if (s.depth > depthBuffer[x] + 0.015) continue;
-      let bottom = s.syFeet + Math.max(2, s.w * 0.105);
+      let bottom = pose.bounds.bottom + Math.max(2, s.w * 0.105);
       for (const block of cover) {
         const d = crateDistance(block, dx, dz);
         if (d < s.depth)
@@ -771,7 +776,8 @@ function renderEnemies() {
             horizon + ((player.eye / TILE - block.h) * PROJ) / d,
           );
       }
-      if (bottom > s.syTop) ctx.rect(x, s.syTop, 2, bottom - s.syTop);
+      if (bottom > pose.bounds.top)
+        ctx.rect(x, pose.bounds.top, 2, bottom - pose.bounds.top);
     }
     ctx.clip();
     ctx.fillStyle = "rgba(56,49,33,.25)";
@@ -786,15 +792,22 @@ function renderEnemies() {
       2 * Math.PI,
     );
     ctx.fill();
-    ctx.drawImage(
-      detailedOpponent.complete && detailedOpponent.naturalWidth
-        ? detailedOpponent
-        : sprite,
-      left,
-      s.syTop,
-      s.w,
-      h,
-    );
+    for (const foot of pose.feet || []) {
+      ctx.fillStyle =
+        "rgba(43,38,28," + 0.2 * (1 - Math.min(1, foot.lift / 0.22)) + ")";
+      ctx.beginPath();
+      ctx.ellipse(
+        foot.x,
+        foot.groundY - 1,
+        s.w * 0.115,
+        Math.max(1, h * 0.012),
+        0,
+        0,
+        2 * Math.PI,
+      );
+      ctx.fill();
+    }
+    drawOpponentPose(ctx, s, pose, opponentLayers);
     if (enemy.hp < 100) {
       ctx.fillStyle = "#282f29";
       ctx.fillRect(left, s.syTop, s.w, 3);
