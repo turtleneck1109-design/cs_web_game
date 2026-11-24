@@ -304,7 +304,7 @@ function platformHeight(e) {
     : 0;
 }
 // The fallback draws a single wall of constant height per column.
-function perchDepth() {
+function sceneDepth() {
   if (depot) return depot.cameraDepth(player, FOV);
   const horizon = H / 2 + Math.tan(player.pitch) * PROJ;
   const columns = new Map();
@@ -438,6 +438,7 @@ function resetGame() {
   state.hitText = "";
   state.hitTextTimer = 0;
 
+  smoke.reset();
   spawnEnemies();
   updateHud();
 
@@ -481,7 +482,7 @@ function applyShot() {
     if (!insideX || !insideY) continue;
 
     if (enemy.perched) {
-      if (!exposedAt(s, cx, cy, perchDepth())) continue;
+      if (!exposedAt(s, cx, cy, sceneDepth())) continue;
     } else if (!lineOfSight(player.x, player.z, enemy.x, enemy.z)) continue;
 
     const sampleX = clamp(Math.floor(s.sx), 0, W - 1);
@@ -598,10 +599,10 @@ function updateEnemies(dt, refreshSight = true) {
             s.sx < W &&
             s.syBodyTop >= 0 &&
             s.syBodyTop < H &&
-            exposedAt(s, s.sx, s.syBodyTop, perchDepth()),
+            exposedAt(s, s.sx, s.syBodyTop, sceneDepth()),
         );
       }
-      canSee = enemy.exposed;
+      canSee = enemy.exposed && !smoke.obscures(enemy);
       enemy.alertTime = canSee ? enemy.alertTime + dt : 0;
       enemy.spotted ||= canSee;
       enemy.crouch += clamp(
@@ -609,7 +610,10 @@ function updateEnemies(dt, refreshSight = true) {
         -dt * 0.6,
         dt * 0.6,
       );
-    } else canSee = lineOfSight(enemy.x, enemy.z, player.x, player.z);
+    } else
+      canSee =
+        lineOfSight(enemy.x, enemy.z, player.x, player.z) &&
+        !smoke.obscures(enemy);
 
     let vx = 0;
     let vz = 0;
@@ -704,6 +708,7 @@ function updateGame(dt, refreshSight) {
   if (state.flashTimer > 0) state.flashTimer -= dt;
   if (state.hitTextTimer > 0) state.hitTextTimer -= dt;
 
+  smoke.update(dt);
   updatePlayer(dt);
   updateEnemies(dt, refreshSight);
 
@@ -817,11 +822,17 @@ function renderEnemies() {
     .filter((e) => e.alive)
     .map((enemy) => ({ enemy, s: enemyScreenData(enemy) }))
     .filter((item) => item.s)
+    .concat(smoke.layers())
     .sort((a, b) => b.s.depth - a.s.depth);
   const cos = Math.cos(player.yaw),
     sin = Math.sin(player.yaw);
   const horizon = H / 2 + Math.tan(player.pitch) * PROJ;
-  for (const { enemy, s } of targets) {
+  for (const target of targets) {
+    if (target.draw) {
+      target.draw();
+      continue;
+    }
+    const { enemy, s } = target;
     const left = s.sx - s.w / 2,
       h = s.syFeet - s.syTop;
     // Broad bounds include extended legs and the backpack. Reject hidden actors
@@ -835,7 +846,7 @@ function renderEnemies() {
     ctx.save();
     ctx.beginPath();
     if (enemy.perched) {
-      const sample = perchDepth(),
+      const sample = sceneDepth(),
         low = Math.min(H, Math.ceil(s.syFeet + h * 0.45));
       for (let y = Math.max(0, Math.floor(top / 4) * 4); y < low; y += 4) {
         let run = -1;
@@ -951,7 +962,7 @@ function renderMiniMap() {
   ctx.closePath();
   ctx.fill();
   for (const e of enemies) {
-    if (!e.alive || (e.perched && !e.spotted)) continue;
+    if (!e.alive || (e.perched && !e.spotted) || smoke.obscures(e)) continue;
     const dx = e.x - player.x,
       dz = e.z - player.z;
     const x = (-sin * dx + cos * dz) * scale,
