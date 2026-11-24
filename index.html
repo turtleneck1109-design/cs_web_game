@@ -52,7 +52,8 @@
               <summary>操作说明</summary>
               <p>
                 <kbd>W A S D</kbd> 移动　<kbd>Shift</kbd> 冲刺　<kbd>R</kbd>
-                换弹<br />移动鼠标转向，左键射击，<kbd>Esc</kbd> 暂停。
+                换弹<br />移动鼠标转向，左键射击，<kbd>Esc</kbd>
+                暂停。<br />小地图上方对应你的朝向。圆点是地面敌人，三角是已发现的墙头守卫。
               </p>
             </details>
             <p id="input-error" role="status"></p>
@@ -76,16 +77,11 @@
       id="training-blaster"
       src="assets/training-blaster.webp"
     />
-    <img
-      hidden
-      alt=""
-      id="training-opponent"
-      src="assets/field-uniform.webp"
-    />
-    <script src="depot.js"></script>
+    <img hidden alt="" id="training-opponent" src="assets/field-uniform.webp" />
+    <script src="depot.js?v=rooftop-radar"></script>
     <script src="equipment.js"></script>
-    <script src="opponent-motion.js"></script>
-    <script src="opponent-model.js?v=field-uniform"></script>
-    <script src="game.js"></script>
+    <script src="opponent-motion.js?v=rooftop-radar"></script>
+    <script src="opponent-model.js?v=rooftop-radar"></script>
+    <script src="game.js?v=rooftop-radar"></script>
   </body>
 </html>

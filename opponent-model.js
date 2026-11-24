@@ -971,7 +971,8 @@ const opponentModel = (() => {
         0.105 +
           Math.sqrt(Math.max(0.32, 0.87 ** 2 - Math.max(0, wide - 0.09) ** 2)),
       ) -
-      0.023 * wave;
+      0.023 * wave -
+      (e.crouch || 0);
     const base = frame([dx, pelvisY, dz], g.yaw);
     const shift = g.active < 0 ? 0 : (g.active === 0 ? 1 : -1) * 0.027 * wave;
     const hips = frame(at(base, shift, 0, 0), g.yaw);
@@ -1003,6 +1004,8 @@ const opponentModel = (() => {
         [side < 0 ? "gloveLeft" : "gloveRight", frame(hand, g.chest)],
       );
     }
+    const platform = platformHeight(e);
+    for (const [, bone] of bones) bone.p[1] += platform;
     return bones;
   }
   const resolution = 512,
@@ -1043,7 +1046,9 @@ const opponentModel = (() => {
         depth = Math.max(0.08, dx * cos + dz * sin);
       return {
         x: W / 2 + ((-dx * sin + dz * cos) * PROJ) / depth,
-        groundY: horizon + (player.eye * PROJ) / (depth * TILE),
+        groundY:
+          horizon +
+          ((player.eye - platformHeight(enemy)) * PROJ) / (depth * TILE),
         lift: foot.lift,
       };
     });
