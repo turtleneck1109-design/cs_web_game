@@ -64,6 +64,7 @@ function steerOpponent(enemy, vx, vz, aim, dt) {
 
 function landingPoint(enemy, index, leadX, leadZ) {
   const point = stancePoint(enemy.x, enemy.z, enemy.gait.yaw, index);
+  if (enemy.perched) return point;
   const x = point.x + leadX,
     z = point.z + leadZ;
   // Keep soles on traversable ground when a predicted stride reaches cover.

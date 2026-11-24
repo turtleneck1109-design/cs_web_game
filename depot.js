@@ -1,3 +1,6 @@
+function roofHeight(x, z) {
+  return 2.68 + ((Math.floor(x / 3) * 3 + Math.floor(z / 3) * 2) % 4) * 0.42;
+}
 // Static depot geometry is uploaded once. The same mesh casts the afternoon shadows.
 function createDepot(canvas, map, tileSize, onMaterialsReady) {
   const gl = canvas.getContext("webgl", { alpha: false, antialias: true });
@@ -335,8 +338,6 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
     "#ffffff",
     [42, 42],
   );
-  const roofHeight = (x, z) =>
-    2.68 + ((Math.floor(x / 3) * 3 + Math.floor(z / 3) * 2) % 4) * 0.42;
   const solid = (x, z) => map[z]?.[x] === "#";
   // Connected walls share a roofline, with smaller rooftop water tanks and aerials above it.
   for (let z = 0; z < map.length; z++)
@@ -960,12 +961,13 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
     void main(){elevation=(pos.y+4.)/20.;gl_Position=vec4(shadowUV(pos)*2.-1.,1.-2.*elevation,1.);}`,
     "precision highp float;varying float elevation;void main(){float e=elevation*255.;gl_FragColor=vec4(floor(e)/255.,fract(e),0.,1.);}",
   );
-  const sceneProgram = program(
-    `attribute vec3 pos,uvMat,tint;uniform vec3 camera;uniform vec4 lens;
+  const sceneVertex = `attribute vec3 pos,uvMat,tint;uniform vec3 camera;uniform vec4 lens;
     varying vec3 vPos,vMat,vTint;varying float distanceZ;
     void main(){vec3 p=pos-camera;float d=dot(p.xz,lens.xy);float right=dot(p.xz,vec2(-lens.y,lens.x));
       gl_Position=vec4(right*lens.z,p.y*lens.z*1.777778-lens.w*d,d*1.001-0.09,d);
-      vPos=pos;vTint=tint;vMat=uvMat;distanceZ=d;}`,
+      vPos=pos;vTint=tint;vMat=uvMat;distanceZ=d;}`;
+  const sceneProgram = program(
+    sceneVertex,
     `precision highp float;uniform sampler2D atlasTex,shadowTex;uniform vec3 camera;varying vec3 vPos,vMat,vTint;varying float distanceZ;` +
       lightProjection +
       `
@@ -1099,8 +1101,108 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
   gl.uniform1i(gl.getUniformLocation(sceneProgram, "shadowTex"), 1);
   const cam = gl.getUniformLocation(sceneProgram, "camera"),
     lens = gl.getUniformLocation(sceneProgram, "lens");
+  // Cache a small camera-depth image on demand. The wall trim, rooftop
+  // equipment and scenery use the same triangles as the visible scene.
+  const dw = 320,
+    dh = 180,
+    pixels = new Uint8Array(dw * dh * 4);
+  const depthProgram = program(
+    sceneVertex,
+    `precision highp float;varying float distanceZ;
+    void main(){float d=min(distanceZ,127.99)*512.;gl_FragColor=vec4(floor(d/256.)/255.,mod(floor(d),256.)/255.,0.,1.);}`,
+  );
+  const depthCam = gl.getUniformLocation(depthProgram, "camera"),
+    depthLens = gl.getUniformLocation(depthProgram, "lens");
+  const framebuffer = gl.createFramebuffer(),
+    zbuffer = gl.createRenderbuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  // Use an RGBA8 texture for lossless packed depths (RGBA4 would round bytes).
+  const depthImage = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, depthImage);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    dw,
+    dh,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    null,
+  );
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.framebufferTexture2D(
+    gl.FRAMEBUFFER,
+    gl.COLOR_ATTACHMENT0,
+    gl.TEXTURE_2D,
+    depthImage,
+    0,
+  );
+  gl.bindRenderbuffer(gl.RENDERBUFFER, zbuffer);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, dw, dh);
+  gl.framebufferRenderbuffer(
+    gl.FRAMEBUFFER,
+    gl.DEPTH_ATTACHMENT,
+    gl.RENDERBUFFER,
+    zbuffer,
+  );
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+    throw Error("Depth target unavailable");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  let depthKey = "";
+  function cameraDepth(player, fov) {
+    const key = [
+      player.x,
+      player.z,
+      player.yaw,
+      player.pitch,
+      player.eye,
+      fov,
+    ].join("/");
+    if (key !== depthKey) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.viewport(0, 0, dw, dh);
+      gl.disable(gl.DITHER);
+      gl.clearColor(1, 1, 1, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.useProgram(depthProgram);
+      const focal = 1 / Math.tan(fov / 2);
+      gl.uniform3f(
+        depthCam,
+        player.x * tileSize,
+        player.eye,
+        player.z * tileSize,
+      );
+      gl.uniform4f(
+        depthLens,
+        Math.cos(player.yaw),
+        Math.sin(player.yaw),
+        focal,
+        (Math.tan(player.pitch) * focal * 16) / 9,
+      );
+      gl.drawArrays(gl.TRIANGLES, 0, shadowVertexCount);
+      gl.readPixels(0, 0, dw, dh, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.useProgram(sceneProgram);
+      gl.enable(gl.DITHER);
+      depthKey = key;
+    }
+    return depthAt;
+  }
+  function depthAt(u, v) {
+    const i =
+      4 *
+      ((dh - 1 - Math.min(dh - 1, Math.max(0, Math.floor(v * dh)))) * dw +
+        Math.min(dw - 1, Math.max(0, Math.floor(u * dw))));
+    return (pixels[i] * 256 + pixels[i + 1]) / 512 / tileSize;
+  }
   return {
     cover,
+    cameraDepth,
     draw(player, fov) {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clearColor(0.56, 0.75, 0.79, 1);

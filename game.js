@@ -296,6 +296,39 @@ function lineOfSight(x1, z1, x2, z2) {
   return true;
 }
 
+function platformHeight(e) {
+  return e.perched
+    ? depot
+      ? roofHeight(Math.floor(e.x), Math.floor(e.z)) + 0.02
+      : 3.2
+    : 0;
+}
+// The fallback draws a single wall of constant height per column.
+function perchDepth() {
+  if (depot) return depot.cameraDepth(player, FOV);
+  const horizon = H / 2 + Math.tan(player.pitch) * PROJ;
+  const columns = new Map();
+  return (u, v) => {
+    const col = Math.floor((u * W) / 2);
+    if (!columns.has(col)) {
+      const angle = player.yaw + Math.atan((col * 2 - W / 2) / PROJ);
+      columns.set(
+        col,
+        castRay(player.x, player.z, angle).dist * Math.cos(angle - player.yaw),
+      );
+    }
+    const d = columns.get(col);
+    return v * H < horizon - ((3.2 - player.eye) * PROJ) / (TILE * d)
+      ? Infinity
+      : d;
+  };
+}
+function exposedAt(s, x, y, depth) {
+  return (
+    x >= 0 && y >= 0 && x < W && y < H && s.depth <= depth(x / W, y / H) + 0.002
+  );
+}
+
 function enemyScreenData(enemy) {
   const dx = enemy.x - player.x;
   const dz = enemy.z - player.z;
@@ -312,9 +345,9 @@ function enemyScreenData(enemy) {
   const pitchOffset = Math.tan(player.pitch) * PROJ;
   const sx = W * 0.5 + (relX / relZ) * PROJ;
 
-  const yTop = 1.72;
-  const yBodyTop = 1.28;
-  const yFeet = 0.0;
+  const yFeet = platformHeight(enemy);
+  const yTop = yFeet + 1.72 - (enemy.crouch || 0);
+  const yBodyTop = yTop - 0.44;
 
   const syTop =
     H * 0.5 - ((yTop - player.eye) / (relZ * TILE)) * PROJ + pitchOffset;
@@ -341,20 +374,25 @@ function spawnEnemies() {
   enemies.length = 0;
   const spots = [
     [9.4, 4.42],
-    [17.2, 5.2],
+    [7.62, 5.25, true],
     [11.8, 7.4],
     [15.4, 9.7],
     [7.2, 12.3],
-    [13.2, 14.6],
+    [11.24, 10.73, true],
     [16.2, 16.1],
     [9.8, 17.1],
   ];
 
-  for (const [x, z] of spots) {
+  for (const [x, z, perched = false] of spots) {
     const heading = rand(-Math.PI, Math.PI);
     enemies.push({
       x,
       z,
+      perched,
+      spotted: false,
+      exposed: false,
+      alertTime: 0,
+      crouch: perched ? 0.27 : 0,
       hp: 100,
       alive: true,
       speed: rand(1.2, 2.0),
@@ -442,10 +480,13 @@ function applyShot() {
     const insideY = cy >= s.syTop && cy <= s.syFeet;
     if (!insideX || !insideY) continue;
 
-    if (!lineOfSight(player.x, player.z, enemy.x, enemy.z)) continue;
+    if (enemy.perched) {
+      if (!exposedAt(s, cx, cy, perchDepth())) continue;
+    } else if (!lineOfSight(player.x, player.z, enemy.x, enemy.z)) continue;
 
     const sampleX = clamp(Math.floor(s.sx), 0, W - 1);
-    if (!depot && s.depth > depthBuffer[sampleX] + 0.06) continue;
+    if (!enemy.perched && !depot && s.depth > depthBuffer[sampleX] + 0.06)
+      continue;
 
     if (!best || s.depth < best.depth) {
       best = { enemy, s, depth: s.depth };
@@ -539,29 +580,55 @@ function updatePlayer(dt) {
   }
 }
 
-function updateEnemies(dt) {
+function updateEnemies(dt, refreshSight = true) {
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
 
     const dx = player.x - enemy.x;
     const dz = player.z - enemy.z;
     const dist = Math.hypot(dx, dz);
-    const canSee = lineOfSight(enemy.x, enemy.z, player.x, player.z);
+    let canSee;
+    if (enemy.perched) {
+      if (refreshSight) {
+        const s = enemyScreenData(enemy);
+        enemy.exposed = Boolean(
+          s &&
+            dist < 11 &&
+            s.sx >= 0 &&
+            s.sx < W &&
+            s.syBodyTop >= 0 &&
+            s.syBodyTop < H &&
+            exposedAt(s, s.sx, s.syBodyTop, perchDepth()),
+        );
+      }
+      canSee = enemy.exposed;
+      enemy.alertTime = canSee ? enemy.alertTime + dt : 0;
+      enemy.spotted ||= canSee;
+      enemy.crouch += clamp(
+        (canSee ? 0 : 0.27) - enemy.crouch,
+        -dt * 0.6,
+        dt * 0.6,
+      );
+    } else canSee = lineOfSight(enemy.x, enemy.z, player.x, player.z);
 
     let vx = 0;
     let vz = 0;
 
     if (canSee && dist < 11) {
-      if (dist > 2.8) {
+      if (!enemy.perched && dist > 2.8) {
         vx = dx / (dist || 1);
         vz = dz / (dist || 1);
-      } else {
+      } else if (!enemy.perched) {
         vx = -dz / (dist || 1);
         vz = dx / (dist || 1);
       }
 
       enemy.shootCd -= dt;
-      if (enemy.shootCd <= 0 && dist < 10) {
+      if (
+        enemy.shootCd <= 0 &&
+        dist < 10 &&
+        (!enemy.perched || (refreshSight && enemy.alertTime > 0.85))
+      ) {
         enemy.shootCd = rand(0.55, 1.05);
         const s = enemyScreenData(enemy);
         let visibleToPlayer = false;
@@ -571,7 +638,9 @@ function updateEnemies(dt) {
           if (onScreen) {
             const sampleX = clamp(Math.floor(s.sx), 0, W - 1);
             visibleToPlayer =
-              Boolean(depot) || s.depth <= depthBuffer[sampleX] + 0.08;
+              enemy.perched ||
+              Boolean(depot) ||
+              s.depth <= depthBuffer[sampleX] + 0.08;
           }
         }
 
@@ -584,7 +653,7 @@ function updateEnemies(dt) {
           state.flashTimer = 0.14;
         }
       }
-    } else {
+    } else if (!enemy.perched) {
       enemy.wanderT -= dt;
       if (enemy.wanderT <= 0) {
         enemy.wanderT = rand(0.5, 1.4);
@@ -609,7 +678,7 @@ function updateEnemies(dt) {
     const pdz = enemy.z - player.z;
     const minDist = 0.95;
     const curDist = Math.hypot(pdx, pdz);
-    if (curDist < minDist && curDist > 0.0001) {
+    if (!enemy.perched && curDist < minDist && curDist > 0.0001) {
       const push = Math.min((minDist - curDist) * 0.6, 1.8 * dt);
       enemy.x += (pdx / curDist) * push;
       enemy.z += (pdz / curDist) * push;
@@ -622,7 +691,7 @@ function updateEnemies(dt) {
   }
 }
 
-function updateGame(dt) {
+function updateGame(dt, refreshSight) {
   if (!state.running) return;
 
   if (state.timeLeft <= 0) {
@@ -636,7 +705,7 @@ function updateGame(dt) {
   if (state.hitTextTimer > 0) state.hitTextTimer -= dt;
 
   updatePlayer(dt);
-  updateEnemies(dt);
+  updateEnemies(dt, refreshSight);
 
   if (player.hp <= 0) {
     player.hp = 0;
@@ -765,30 +834,50 @@ function renderEnemies() {
     let visible = false;
     ctx.save();
     ctx.beginPath();
-    for (let x = start; x < end; x += 2) {
-      const u = (x + 1 - W / 2) / PROJ,
-        dx = cos - u * sin,
-        dz = sin + u * cos;
-      if (depot) {
-        const ray = castRay(player.x, player.z, Math.atan2(dz, dx));
-        depthBuffer[x] = ray.dist / Math.hypot(dx, dz);
-        if (x + 1 < W) depthBuffer[x + 1] = depthBuffer[x];
+    if (enemy.perched) {
+      const sample = perchDepth(),
+        low = Math.min(H, Math.ceil(s.syFeet + h * 0.45));
+      for (let y = Math.max(0, Math.floor(top / 4) * 4); y < low; y += 4) {
+        let run = -1;
+        for (let x = Math.floor(start / 4) * 4; x < end; x += 4) {
+          const open = s.depth <= sample((x + 2) / W, (y + 2) / H) + 0.002;
+          if (open && run < 0) run = x;
+          if (!open && run >= 0) {
+            ctx.rect(run, y, x - run, 4);
+            visible = true;
+            run = -1;
+          }
+        }
+        if (run >= 0) {
+          ctx.rect(run, y, end - run, 4);
+          visible = true;
+        }
       }
-      if (s.depth > depthBuffer[x] + 0.015) continue;
-      let bottom = s.syFeet + h * 0.45;
-      for (const block of cover) {
-        const d = crateDistance(block, dx, dz);
-        if (d < s.depth)
-          bottom = Math.min(
-            bottom,
-            horizon + ((player.eye / TILE - block.h) * PROJ) / d,
-          );
+    } else
+      for (let x = start; x < end; x += 2) {
+        const u = (x + 1 - W / 2) / PROJ,
+          dx = cos - u * sin,
+          dz = sin + u * cos;
+        if (depot) {
+          const ray = castRay(player.x, player.z, Math.atan2(dz, dx));
+          depthBuffer[x] = ray.dist / Math.hypot(dx, dz);
+          if (x + 1 < W) depthBuffer[x + 1] = depthBuffer[x];
+        }
+        if (s.depth > depthBuffer[x] + 0.015) continue;
+        let bottom = s.syFeet + h * 0.45;
+        for (const block of cover) {
+          const d = crateDistance(block, dx, dz);
+          if (d < s.depth)
+            bottom = Math.min(
+              bottom,
+              horizon + ((player.eye / TILE - block.h) * PROJ) / d,
+            );
+        }
+        if (bottom > top) {
+          ctx.rect(x, top, 2, bottom - top);
+          visible = true;
+        }
       }
-      if (bottom > top) {
-        ctx.rect(x, top, 2, bottom - top);
-        visible = true;
-      }
-    }
     if (!visible) {
       ctx.restore();
       continue;
@@ -834,57 +923,69 @@ function renderEnemies() {
 }
 
 function renderMiniMap() {
-  const scale = 5;
-  const pad = 20;
-  const mapW = MAP_W * scale;
-  const mapH = MAP_H * scale;
-  const x0 = W - mapW - pad;
-  const y0 = pad;
-
-  ctx.fillStyle = "rgba(8, 14, 22, 0.72)";
-  ctx.fillRect(x0 - 6, y0 - 6, mapW + 12, mapH + 12);
-
-  for (let z = 0; z < MAP_H; z += 1) {
-    for (let x = 0; x < MAP_W; x += 1) {
-      if (worldMap[z][x] === "#") {
-        ctx.fillStyle = "#939783";
-        ctx.fillRect(x0 + x * scale, y0 + z * scale, scale, scale);
-      } else {
-        ctx.fillStyle = "rgba(82, 115, 90, 0.35)";
-        ctx.fillRect(x0 + x * scale, y0 + z * scale, scale, scale);
-      }
-    }
-  }
-
-  const px = x0 + player.x * scale;
-  const pz = y0 + player.z * scale;
-  const fovLen = 16;
-  const left = player.yaw - FOV * 0.5;
-  const right = player.yaw + FOV * 0.5;
-
-  ctx.strokeStyle = "rgba(120, 240, 255, 0.45)";
+  const radius = 65,
+    cx = W - radius - 20,
+    cy = radius + 20,
+    scale = 8;
+  const cos = Math.cos(player.yaw),
+    sin = Math.sin(player.yaw);
+  ctx.save();
+  ctx.translate(cx, cy);
   ctx.beginPath();
-  ctx.moveTo(px, pz);
-  ctx.lineTo(px + Math.cos(left) * fovLen, pz + Math.sin(left) * fovLen);
-  ctx.moveTo(px, pz);
-  ctx.lineTo(px + Math.cos(right) * fovLen, pz + Math.sin(right) * fovLen);
-  ctx.stroke();
-
-  ctx.fillStyle = "#eef186";
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "rgba(12,24,23,.88)";
+  ctx.fillRect(-radius, -radius, 2 * radius, 2 * radius);
+  ctx.save();
+  ctx.transform(-sin * scale, -cos * scale, cos * scale, -sin * scale, 0, 0);
+  ctx.translate(-player.x, -player.z);
+  ctx.fillStyle = "#818a77";
+  for (let z = 0; z < MAP_H; z++)
+    for (let x = 0; x < MAP_W; x++)
+      if (worldMap[z][x] === "#") ctx.fillRect(x, z, 1, 1);
+  ctx.restore();
+  ctx.fillStyle = "rgba(234,239,148,.14)";
   ctx.beginPath();
-  ctx.arc(px, pz, 2.8, 0, Math.PI * 2);
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, radius, -Math.PI / 2 - FOV / 2, -Math.PI / 2 + FOV / 2);
+  ctx.closePath();
   ctx.fill();
-
-  for (const enemy of enemies) {
-    if (!enemy.alive) continue;
-    ctx.fillStyle = "#ed8f6c";
+  for (const e of enemies) {
+    if (!e.alive || (e.perched && !e.spotted)) continue;
+    const dx = e.x - player.x,
+      dz = e.z - player.z;
+    const x = (-sin * dx + cos * dz) * scale,
+      y = -(cos * dx + sin * dz) * scale;
+    const factor = Math.min(1, (radius - 5) / (Math.hypot(x, y) || 1));
+    ctx.save();
+    ctx.translate(x * factor, y * factor);
+    ctx.fillStyle = "#ffa17c";
     ctx.beginPath();
-    ctx.arc(x0 + enemy.x * scale, y0 + enemy.z * scale, 2.3, 0, Math.PI * 2);
+    if (e.perched) {
+      ctx.moveTo(0, -4.5);
+      ctx.lineTo(4, 3);
+      ctx.lineTo(-4, 3);
+      ctx.closePath();
+    } else ctx.arc(0, 0, factor < 1 ? 1.9 : 2.7, 0, 2 * Math.PI);
     ctx.fill();
+    ctx.restore();
   }
-
-  ctx.strokeStyle = "rgba(208, 227, 255, 0.5)";
-  ctx.strokeRect(x0 - 0.5, y0 - 0.5, mapW + 1, mapH + 1);
+  ctx.fillStyle = "#f0f392";
+  ctx.strokeStyle = "#273328";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, -6);
+  ctx.lineTo(4.5, 4.5);
+  ctx.lineTo(0, 2.7);
+  ctx.lineTo(-4.5, 4.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "#d1d6bf";
+  ctx.beginPath();
+  ctx.arc(0, 0, radius - 1, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function renderCrosshair() {
@@ -981,7 +1082,7 @@ function loop(now) {
     let remaining = Math.min(elapsed, 0.18);
     while (remaining > 1e-8 && state.running) {
       const step = Math.min(remaining, 1 / 60);
-      updateGame(step);
+      updateGame(step, remaining - step <= 1e-8);
       remaining -= step;
     }
     if (depot && elapsed > 0.044) slowFrames++;
