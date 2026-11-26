@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>沙港训练场 · Mini CS</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=arenas" />
   </head>
   <body>
     <main>
@@ -13,6 +13,7 @@
         <span class="mode">单人训练</span
         ><button id="restart" class="quiet">↻　重新开始</button>
       </header>
+      <nav id="map-nav" aria-label="选择作战场景"><span>作战场景</span></nav>
       <section id="arena" data-mode="ready" aria-label="沙港训练场">
         <canvas
           id="world"
@@ -61,7 +62,7 @@
         </div>
       </section>
       <footer>
-        <span><i></i> 沙港训练场</span
+        <span><i></i><span id="current-map">沙港训练场</span></span
         ><span>键盘 + 鼠标 <em>/</em> <kbd>ESC</kbd> 暂停</span>
       </footer>
     </main>
@@ -78,11 +79,13 @@
       src="assets/training-blaster.webp"
     />
     <img hidden alt="" id="training-opponent" src="assets/field-uniform.webp" />
-    <script src="depot.js?v=rooftop-radar"></script>
+    <script src="arenas.js?v=1"></script>
+    <script src="arena-scenery.js?v=1"></script>
+    <script src="depot.js?v=arenas"></script>
     <script src="equipment.js"></script>
     <script src="opponent-motion.js?v=rooftop-radar"></script>
     <script src="opponent-model.js?v=rooftop-radar"></script>
     <script src="smoke.js?v=1"></script>
-    <script src="game.js?v=random-smoke"></script>
+    <script src="game.js?v=arenas"></script>
   </body>
 </html>

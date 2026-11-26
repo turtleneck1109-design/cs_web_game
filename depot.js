@@ -2,7 +2,10 @@ function roofHeight(x, z) {
   return 2.68 + ((Math.floor(x / 3) * 3 + Math.floor(z / 3) * 2) % 4) * 0.42;
 }
 // Static depot geometry is uploaded once. The same mesh casts the afternoon shadows.
-function createDepot(canvas, map, tileSize, onMaterialsReady) {
+function createDepot(canvas, scene, tileSize, onMaterialsReady) {
+  const map = scene.grid,
+    sandport = scene.code === "SANDPORT",
+    cold = scene.code === "FROSTLINE";
   const gl = canvas.getContext("webgl", { alpha: false, antialias: true });
   if (!gl) return null;
   const atlas = document.createElement("canvas");
@@ -59,6 +62,11 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
     paint.beginPath();
     paint.rect(0, 0, tile, tile);
     paint.clip();
+    if (!sandport && ((n >= 1 && n <= 9) || n === 15)) {
+      paintArenaTile(scene, n, { rect, plaster, word, random });
+      paint.restore();
+      continue;
+    }
     if (n === 0) rect(0, 0, 256, 256, "white");
     if (n >= 1 && n <= 8) {
       plaster(
@@ -349,7 +357,7 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
         idx = x * 13 + z * 7;
       const height = roofHeight(x, z);
       const Y = height;
-      const roof = "#cfad7e";
+      const roof = sandport ? "#cfad7e" : cold ? "#e5eff3" : "#85766b";
       const faces = [
         [
           x - 1,
@@ -405,8 +413,16 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
         quad(...p, mat, ["#fff9ef", "#ebe5d6", "#eee7d8", "#fffdfa"][f]);
       }
       quad([X, Y, Z], [X + s, Y, Z], [X + s, Y, Z + s], [X, Y, Z + s], 0, roof);
-      box(X - 0.045, Y - 0.12, Z - 0.045, s + 0.09, 0.14, s + 0.09, "#ead3ac");
-      if (idx % 8 === 0) {
+      box(
+        X - 0.045,
+        Y - 0.12,
+        Z - 0.045,
+        s + 0.09,
+        0.14,
+        s + 0.09,
+        sandport ? "#ead3ac" : cold ? "#e0ecef" : "#776f63",
+      );
+      if (sandport && idx % 8 === 0) {
         box(X + 0.3, Y, Z + 0.36, s * 0.65, 0.52, s * 0.56, "#cfb791");
         box(
           X + 0.25,
@@ -418,7 +434,7 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
           "#eee0be",
         );
       }
-      if (idx % 17 === 0) {
+      if (sandport && idx % 17 === 0) {
         beam([X + 1, Y, Z + 1], [X + 1, Y + 1.65, Z + 1], 0.024, "#5f6356");
         beam(
           [X + 0.57, Y + 1.43, Z + 1],
@@ -428,465 +444,6 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
         );
       }
     }
-  // Cloth shades, exposed downpipes and projecting sills break up the flat façades.
-  function awning(x, z, width, y) {
-    const stripes = 9;
-    for (let i = 0; i < stripes; i++) {
-      const a = z + (i * width) / stripes,
-        b = z + ((i + 1) * width) / stripes;
-      const col = i % 2 ? "#c3704f" : "#eee0b9";
-      quad(
-        [x, y, a],
-        [x, y, b],
-        [x - 0.72, y - 0.27, b],
-        [x - 0.72, y - 0.27, a],
-        0,
-        col,
-      );
-      quad(
-        [x - 0.72, y - 0.27, a],
-        [x - 0.72, y - 0.27, b],
-        [x - 0.72, y - 0.39, b],
-        [x - 0.72, y - 0.39, a],
-        0,
-        col,
-      );
-    }
-    for (const end of [z + 0.06, z + width - 0.06])
-      beam([x, y - 0.72, end], [x - 0.7, y - 0.29, end], 0.023, "#59675e");
-  }
-  awning(6 * tileSize - 0.01, 3.05 * tileSize, tileSize * 0.88, 2.36);
-  awning(14 * tileSize - 0.01, 7.1 * tileSize, tileSize * 0.8, 2.6);
-  awning(10 * tileSize - 0.01, 1.08 * tileSize, tileSize * 0.84, 2.55);
-  function wallDetails(x, z) {
-    const X = x * tileSize,
-      Z = z * tileSize - 0.035,
-      H = roofHeight(x, z);
-    beam([X + 0.18, 0.09, Z], [X + 0.18, H - 0.08, Z], 0.043, "#8b907c");
-    for (const y of [0.48, 1.65])
-      box(X + 0.11, y, Z - 0.07, 0.14, 0.038, 0.11, "#696f62");
-    box(X + 0.39, H - 0.75, Z - 0.2, 0.66, 0.39, 0.21, "#d6ccaf");
-    for (let k = 0; k < 5; k++)
-      box(
-        X + 0.43,
-        H - 0.7 + k * 0.051,
-        Z - 0.212,
-        0.53,
-        0.016,
-        0.02,
-        "#8e9586",
-      );
-  }
-  for (const [x, z] of [
-    [5, 5],
-    [7, 5],
-    [12, 3],
-    [10, 10],
-    [14, 13],
-    [17, 1],
-  ])
-    wallDetails(x, z);
-  // The upper gallery occupies existing rooftops. Its arches frame recessed shutters.
-  function gallery(x, z, floor, bays) {
-    const bay = 1.18,
-      radius = 0.42,
-      sill = floor + 0.28,
-      spring = floor + 1.14,
-      top = spring + 0.63;
-    const width = bays * bay;
-    box(x + 0.22, floor, z, 0.98, top - floor, width, "#ddc69f", 13);
-    box(x - 0.12, floor - 0.06, z - 0.09, 1.48, 0.19, width + 0.18, "#ddc6a0");
-    for (let k = 0; k < bays; k++) {
-      const center = z + (k + 0.5) * bay;
-      const face = (height, side) => [x, height, center + side];
-      const rear = (height, side) => [x + 0.215, height, center + side];
-      quad(
-        rear(top, -radius),
-        rear(top, radius),
-        rear(sill, radius),
-        rear(sill, -radius),
-        0,
-        "#325955",
-      );
-      for (let slat = 0; slat < 9; slat++)
-        box(
-          x + 0.18,
-          sill + 0.1 + slat * 0.095,
-          center - radius + 0.065,
-          0.035,
-          0.035,
-          radius * 2 - 0.13,
-          "#63837a",
-        );
-      for (const sign of [-1, 1]) {
-        const offset = sign < 0 ? -bay / 2 : radius;
-        box(
-          x,
-          sill,
-          center + offset,
-          0.23,
-          spring - sill,
-          bay / 2 - radius,
-          "#dfc29b",
-          13,
-        );
-        box(
-          x - 0.035,
-          spring - 0.07,
-          center + offset - 0.025,
-          0.31,
-          0.09,
-          bay / 2 - radius + 0.05,
-          "#f0d8b0",
-        );
-      }
-      for (let j = 0; j < 14; j++) {
-        const arc = (n, r) => [
-          Math.sin((n * Math.PI) / 14) * r + spring,
-          Math.cos((n * Math.PI) / 14) * r,
-        ];
-        const [ya, za] = arc(j, radius),
-          [yb, zb] = arc(j + 1, radius);
-        quad(
-          face(top, za),
-          face(top, zb),
-          face(yb, zb),
-          face(ya, za),
-          0,
-          "#dbc399",
-        );
-        quad(
-          face(ya, za),
-          face(yb, zb),
-          rear(yb, zb),
-          rear(ya, za),
-          0,
-          "#aa967a",
-        );
-        const [yc, zc] = arc(j, radius + 0.1),
-          [yd, zd] = arc(j + 1, radius + 0.1);
-        const stone = (y, s) => [x - 0.025, y, center + s];
-        quad(
-          stone(yc, zc),
-          stone(yd, zd),
-          stone(yb, zb),
-          stone(ya, za),
-          0,
-          ["#f4e0b9", "#e4cfa8", "#ead6af"][j % 3],
-        );
-      }
-    }
-    box(x - 0.09, top, z - 0.065, 1.44, 0.12, width + 0.13, "#efe0c1");
-    box(x - 0.14, top + 0.12, z - 0.1, 1.5, 0.09, width + 0.2, "#ac7455");
-    box(x - 0.16, top + 0.21, z - 0.13, 1.53, 0.07, width + 0.26, "#cd946f");
-    for (let i = 0; i < Math.ceil(width / 0.17); i++) {
-      const edge = z + i * 0.17;
-      beam(
-        [x - 0.135, top + 0.275, edge],
-        [x + 0.38, top + 0.34, edge],
-        0.045,
-        ["#cf946e", "#bd835d", "#da9e76"][i % 3],
-      );
-    }
-    const front = x - 0.3;
-    for (let i = 0; i <= bays * 5; i++) {
-      const Z = z + (i * width) / (bays * 5);
-      box(front, floor + 0.07, Z, 0.027, 0.55, 0.027, "#3c5550");
-    }
-    box(front, floor + 0.57, z, 0.05, 0.053, width + 0.03, "#4c6158");
-    box(front, floor + 0.23, z, 0.035, 0.032, width, "#657468");
-    box(
-      front - 0.05,
-      floor - 0.06,
-      z - 0.06,
-      0.54,
-      0.12,
-      width + 0.12,
-      "#c9ab84",
-    );
-  }
-  gallery(6 * tileSize - 0.015, 3.04 * tileSize, roofHeight(6, 3) + 0.03, 2);
-  gallery(14 * tileSize - 0.02, 6.08 * tileSize, roofHeight(14, 6) + 0.03, 2);
-  gallery(10 * tileSize - 0.02, 16.05 * tileSize, roofHeight(10, 16) + 0.03, 2);
-
-  function floweringVine(x, y, z, length) {
-    for (let strand = 0; strand < 13; strand++) {
-      const offset = (strand / 12 - 0.5) * 1.4,
-        drop = length * (0.22 + 0.78 * random());
-      const stem = (t) => [
-        x - 0.09 * Math.sin(t * 3),
-        y - t * drop,
-        z + offset + 0.095 * Math.sin(strand + t * 5),
-      ];
-      beam(stem(0), stem(0.55), 0.015, "#726c46");
-      beam(stem(0.55), stem(1), 0.01, "#686749");
-      for (let j = 0; j < 13; j++) {
-        const [X, Y, Z] = stem(j / 13),
-          leaf = 0.07 + random() * 0.065;
-        const dz = (random() - 0.5) * 0.23,
-          a = [X - 0.025, Y, Z + dz];
-        quad(
-          a,
-          [X - 0.07, Y + 0.07, Z + dz + leaf],
-          [X - 0.09, Y - 0.03, Z + dz + leaf * 1.5],
-          [X - 0.055, Y - 0.055, Z + dz + leaf * 0.45],
-          0,
-          ["#50694b", "#6d8254", "#81915e"][j % 3],
-        );
-        if (random() < 0.58) {
-          const zz = Z + dz - 0.02,
-            yy = Y + 0.03,
-            scale = 0.045 + random() * 0.045;
-          const tilt = random() * Math.PI;
-          for (let petal = 0; petal < 3; petal++) {
-            const angle = tilt + petal * 2.094,
-              cy = Math.sin(angle),
-              cz = Math.cos(angle);
-            const tip = [X - 0.13, yy + cy * scale, zz + cz * scale];
-            const left = [
-              X - 0.115,
-              yy + (cy * 0.48 + cz * 0.27) * scale,
-              zz + (cz * 0.48 - cy * 0.27) * scale,
-            ];
-            const right = [
-              X - 0.117,
-              yy + (cy * 0.48 - cz * 0.25) * scale,
-              zz + (cz * 0.48 + cy * 0.25) * scale,
-            ];
-            quad(
-              [X - 0.11, yy, zz],
-              left,
-              tip,
-              right,
-              0,
-              ["#a64664", "#d27385", "#c15b75", "#df99a2"][
-                (strand + j + petal) % 4
-              ],
-            );
-          }
-        }
-      }
-    }
-  }
-  floweringVine(
-    6 * tileSize - 0.37,
-    roofHeight(6, 3) + 0.62,
-    3.21 * tileSize,
-    0.94,
-  );
-  floweringVine(
-    14 * tileSize - 0.37,
-    roofHeight(14, 6) + 0.58,
-    6.61 * tileSize,
-    1.18,
-  );
-  // Harbor crane beyond the playable streets, with a trolley and hanging hook.
-  function dockCrane(x, z, height) {
-    const iron = "#59736f",
-      lit = "#83988a",
-      rust = "#aa7d56";
-    for (const dx of [-0.8, 0.8])
-      for (const dz of [-0.8, 0.8]) {
-        beam([x + dx, 0, z + dz], [x + dx, height, z + dz], 0.1, iron);
-        for (let y = 1; y < height - 1.8; y += 1.8) {
-          beam([x + dx, y, z + dz], [x - dx, y + 1.8, z + dz], 0.043, lit);
-          beam([x + dx, y, z + dz], [x + dx, y + 1.8, z - dz], 0.043, lit);
-        }
-      }
-    for (const dx of [-0.52, 0.52]) {
-      const bottom = (t) => [x + dx, height + 0.06, z + t];
-      const top = (t) => [x + dx, height + 1.18, z + t];
-      beam(bottom(-6), bottom(8), 0.09, iron);
-      beam(top(-6), top(8), 0.07, lit);
-      for (let j = -6; j < 8; j++) {
-        beam(bottom(j), top(j + 1), 0.05, lit);
-        beam(top(j + 1), bottom(j + 1), 0.035, iron);
-      }
-    }
-    box(x - 0.75, height - 1.03, z - 1.65, 1.48, 1.08, 1.55, "#b79a72");
-    box(x - 0.78, height - 0.84, z - 1.48, 0.05, 0.58, 1.15, "#526e71");
-    box(x - 0.7, height - 0.14, z - 5.7, 1.4, 1.22, 2.15, rust);
-    for (const dz of [4.9, 5.23])
-      beam([x, height, z + dz], [x, height - 2.9, z + dz], 0.022, "#536662");
-    box(x - 0.16, height - 2.95, z + 4.87, 0.32, 0.17, 0.42, "#947951");
-  }
-  dockCrane(18.0 * tileSize, 4.95 * tileSize, 8.2);
-
-  function tank(x, z, base) {
-    for (const dx of [-0.51, 0.51])
-      for (const dz of [-0.51, 0.51])
-        beam(
-          [x + dx, base, z + dz],
-          [x + dx, base + 1.4, z + dz],
-          0.048,
-          "#526664",
-        );
-    for (const dz of [-0.51, 0.51]) {
-      beam(
-        [x - 0.51, base + 0.06, z + dz],
-        [x + 0.51, base + 1.26, z + dz],
-        0.033,
-        "#62746b",
-      );
-      beam(
-        [x + 0.51, base + 0.06, z + dz],
-        [x - 0.51, base + 1.26, z + dz],
-        0.033,
-        "#62746b",
-      );
-    }
-    box(x - 0.7, base + 1.21, z - 0.7, 1.4, 0.08, 1.4, "#606e63");
-    const ring = (i, h, r) => [
-      x + Math.cos((i * Math.PI) / 8) * r,
-      h,
-      z + Math.sin((i * Math.PI) / 8) * r,
-    ];
-    for (let i = 0; i < 16; i++) {
-      quad(
-        ring(i, base + 2.45, 0.8),
-        ring(i + 1, base + 2.45, 0.8),
-        ring(i + 1, base + 1.28, 0.8),
-        ring(i, base + 1.28, 0.8),
-        11,
-      );
-      quad(
-        ring(i, base + 2.45, 0.85),
-        ring(i + 1, base + 2.45, 0.85),
-        [x, base + 2.72, z],
-        [x, base + 2.72, z],
-        0,
-        "#a9b2a2",
-      );
-    }
-  }
-  tank(7.55 * tileSize, 2.62 * tileSize, roofHeight(7, 2));
-  tank(14.6 * tileSize, 5.4 * tileSize, roofHeight(14, 5));
-  for (const [x, z, h] of [
-    [6.1, 2.7, 6.2],
-    [7.6, 1.7, 7.3],
-    [13.6, 3.5, 6.9],
-    [15.1, 6.5, 6.4],
-    [3.7, 5.6, 5.8],
-    [11.5, 10.4, 7],
-    [2.4, 12.5, 6.5],
-    [16.2, 13.4, 6.6],
-    [10.6, 16.2, 7.4],
-  ])
-    palm(x * tileSize, z * tileSize, h);
-  function cable(a, b, sag) {
-    let prev = a;
-    for (let i = 1; i <= 13; i++) {
-      const t = i / 13,
-        p = a.map(
-          (val, j) =>
-            val + (b[j] - val) * t - (j === 1 ? 4 * t * (1 - t) * sag : 0),
-        );
-      beam(prev, p, 0.014, "#474e47");
-      prev = p;
-    }
-  }
-  for (const [a, b] of [
-    [
-      [7, 6],
-      [6, 3],
-    ],
-    [
-      [10, 5],
-      [7, 3],
-    ],
-    [
-      [14, 5],
-      [10, 2],
-    ],
-    [
-      [7, 9],
-      [3, 8],
-    ],
-    [
-      [15, 12],
-      [11, 10],
-    ],
-  ]) {
-    const A = [a[0] * tileSize, 4.9, a[1] * tileSize],
-      B = [b[0] * tileSize, 5.55, b[1] * tileSize];
-    beam([A[0], 0, A[2]], A, 0.062, "#786a51");
-    beam([B[0], 0, B[2]], B, 0.062, "#786a51");
-    cable(A, B, 0.6);
-    cable([A[0], 4.6, A[2]], [B[0], 5.3, B[2]], 0.78);
-  }
-  // A painted overhead sign and rooftop cargo mark the approach down the main lane.
-  const gx = 12.9 * tileSize,
-    gz = 4 * tileSize;
-  box(gx, 3.0, gz - 0.5, 0.14, 0.12, 3.5, "#54635c");
-  beam([gx, 3.1, gz + 2.8], [gx, 0, gz + 2.8], 0.068, "#657069");
-  quad(
-    [gx - 0.02, 3.8, gz + 0.15],
-    [gx - 0.02, 3.8, gz + 2.35],
-    [gx - 0.02, 3.12, gz + 2.35],
-    [gx - 0.02, 3.12, gz + 0.15],
-    12,
-  );
-  // Sandstone aprons distinguish the loading doors from the cobbled road.
-  for (const [x, z, length] of [
-    [3.1, 4.73, 4.85],
-    [10.15, 2.73, 2.65],
-    [2.1, 11.73, 1.75],
-  ]) {
-    const X = x * tileSize,
-      Z = z * tileSize,
-      end = X + length * tileSize;
-    quad(
-      [X, 0.008, Z],
-      [end, 0.008, Z],
-      [end, 0.008, Z + 0.27 * tileSize],
-      [X, 0.008, Z + 0.27 * tileSize],
-      14,
-      "#fffaf0",
-      [length * 1.5, 0.43],
-    );
-  }
-  // Paint and drainage hardware sit flush with the paving along the loading bays.
-  function paving(x, z, w, d, color) {
-    quad(
-      [x, 0.012, z],
-      [x + w, 0.012, z],
-      [x + w, 0.012, z + d],
-      [x, 0.012, z + d],
-      0,
-      color,
-    );
-  }
-  for (const [x, z] of [
-    [4.7, 4.83],
-    [8.2, 4.83],
-    [12, 3.93],
-    [13.1, 8.83],
-    [6.4, 11.85],
-  ]) {
-    const X = x * tileSize,
-      Z = z * tileSize;
-    paving(X, Z, 0.76, 0.28, "#746f60");
-    for (let i = 0; i < 10; i++)
-      quad(
-        [X + 0.04 + i * 0.07, 0.018, Z + 0.025],
-        [X + 0.064 + i * 0.07, 0.018, Z + 0.025],
-        [X + 0.064 + i * 0.07, 0.018, Z + 0.255],
-        [X + 0.04 + i * 0.07, 0.018, Z + 0.255],
-        0,
-        "#424a44",
-      );
-  }
-  for (let i = 0; i < 12; i++) {
-    paving(
-      (3.8 + i * 0.34) * tileSize,
-      4.68 * tileSize,
-      0.45,
-      0.055,
-      "#ddbd65",
-    );
-  }
-  paving(4.35 * tileSize, 4.68 * tileSize, 0.055, 0.62, "#ddbd65");
-  paving(6.65 * tileSize, 4.68 * tileSize, 0.055, 0.62, "#ddbd65");
   const cover = [];
   function crate(x, z, w, h, d) {
     box(x, 0, z, w, h, d, "#ffffff", 10);
@@ -900,10 +457,486 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
       h: h / tileSize,
     });
   }
-  crate(7.9 * tileSize, 3.88 * tileSize, 1.05, 1.08, 0.83);
-  crate(13.83 * tileSize, 4.69 * tileSize, 0.86, 0.95, 0.69);
-  crate(8.25 * tileSize, 12.02 * tileSize, 1.16, 0.92, 0.94);
-  crate(15.1 * tileSize, 15.1 * tileSize, 0.96, 1.05, 0.8);
+  if (sandport) buildSandport();
+  else buildArenaScenery(scene, tileSize, { box, beam, quad, crate });
+  function buildSandport() {
+    // Cloth shades, exposed downpipes and projecting sills break up the flat façades.
+    function awning(x, z, width, y) {
+      const stripes = 9;
+      for (let i = 0; i < stripes; i++) {
+        const a = z + (i * width) / stripes,
+          b = z + ((i + 1) * width) / stripes;
+        const col = i % 2 ? "#c3704f" : "#eee0b9";
+        quad(
+          [x, y, a],
+          [x, y, b],
+          [x - 0.72, y - 0.27, b],
+          [x - 0.72, y - 0.27, a],
+          0,
+          col,
+        );
+        quad(
+          [x - 0.72, y - 0.27, a],
+          [x - 0.72, y - 0.27, b],
+          [x - 0.72, y - 0.39, b],
+          [x - 0.72, y - 0.39, a],
+          0,
+          col,
+        );
+      }
+      for (const end of [z + 0.06, z + width - 0.06])
+        beam([x, y - 0.72, end], [x - 0.7, y - 0.29, end], 0.023, "#59675e");
+    }
+    awning(6 * tileSize - 0.01, 3.05 * tileSize, tileSize * 0.88, 2.36);
+    awning(14 * tileSize - 0.01, 7.1 * tileSize, tileSize * 0.8, 2.6);
+    awning(10 * tileSize - 0.01, 1.08 * tileSize, tileSize * 0.84, 2.55);
+    function wallDetails(x, z) {
+      const X = x * tileSize,
+        Z = z * tileSize - 0.035,
+        H = roofHeight(x, z);
+      beam([X + 0.18, 0.09, Z], [X + 0.18, H - 0.08, Z], 0.043, "#8b907c");
+      for (const y of [0.48, 1.65])
+        box(X + 0.11, y, Z - 0.07, 0.14, 0.038, 0.11, "#696f62");
+      box(X + 0.39, H - 0.75, Z - 0.2, 0.66, 0.39, 0.21, "#d6ccaf");
+      for (let k = 0; k < 5; k++)
+        box(
+          X + 0.43,
+          H - 0.7 + k * 0.051,
+          Z - 0.212,
+          0.53,
+          0.016,
+          0.02,
+          "#8e9586",
+        );
+    }
+    for (const [x, z] of [
+      [5, 5],
+      [7, 5],
+      [12, 3],
+      [10, 10],
+      [14, 13],
+      [17, 1],
+    ])
+      wallDetails(x, z);
+    // The upper gallery occupies existing rooftops. Its arches frame recessed shutters.
+    function gallery(x, z, floor, bays) {
+      const bay = 1.18,
+        radius = 0.42,
+        sill = floor + 0.28,
+        spring = floor + 1.14,
+        top = spring + 0.63;
+      const width = bays * bay;
+      box(x + 0.22, floor, z, 0.98, top - floor, width, "#ddc69f", 13);
+      box(
+        x - 0.12,
+        floor - 0.06,
+        z - 0.09,
+        1.48,
+        0.19,
+        width + 0.18,
+        "#ddc6a0",
+      );
+      for (let k = 0; k < bays; k++) {
+        const center = z + (k + 0.5) * bay;
+        const face = (height, side) => [x, height, center + side];
+        const rear = (height, side) => [x + 0.215, height, center + side];
+        quad(
+          rear(top, -radius),
+          rear(top, radius),
+          rear(sill, radius),
+          rear(sill, -radius),
+          0,
+          "#325955",
+        );
+        for (let slat = 0; slat < 9; slat++)
+          box(
+            x + 0.18,
+            sill + 0.1 + slat * 0.095,
+            center - radius + 0.065,
+            0.035,
+            0.035,
+            radius * 2 - 0.13,
+            "#63837a",
+          );
+        for (const sign of [-1, 1]) {
+          const offset = sign < 0 ? -bay / 2 : radius;
+          box(
+            x,
+            sill,
+            center + offset,
+            0.23,
+            spring - sill,
+            bay / 2 - radius,
+            "#dfc29b",
+            13,
+          );
+          box(
+            x - 0.035,
+            spring - 0.07,
+            center + offset - 0.025,
+            0.31,
+            0.09,
+            bay / 2 - radius + 0.05,
+            "#f0d8b0",
+          );
+        }
+        for (let j = 0; j < 14; j++) {
+          const arc = (n, r) => [
+            Math.sin((n * Math.PI) / 14) * r + spring,
+            Math.cos((n * Math.PI) / 14) * r,
+          ];
+          const [ya, za] = arc(j, radius),
+            [yb, zb] = arc(j + 1, radius);
+          quad(
+            face(top, za),
+            face(top, zb),
+            face(yb, zb),
+            face(ya, za),
+            0,
+            "#dbc399",
+          );
+          quad(
+            face(ya, za),
+            face(yb, zb),
+            rear(yb, zb),
+            rear(ya, za),
+            0,
+            "#aa967a",
+          );
+          const [yc, zc] = arc(j, radius + 0.1),
+            [yd, zd] = arc(j + 1, radius + 0.1);
+          const stone = (y, s) => [x - 0.025, y, center + s];
+          quad(
+            stone(yc, zc),
+            stone(yd, zd),
+            stone(yb, zb),
+            stone(ya, za),
+            0,
+            ["#f4e0b9", "#e4cfa8", "#ead6af"][j % 3],
+          );
+        }
+      }
+      box(x - 0.09, top, z - 0.065, 1.44, 0.12, width + 0.13, "#efe0c1");
+      box(x - 0.14, top + 0.12, z - 0.1, 1.5, 0.09, width + 0.2, "#ac7455");
+      box(x - 0.16, top + 0.21, z - 0.13, 1.53, 0.07, width + 0.26, "#cd946f");
+      for (let i = 0; i < Math.ceil(width / 0.17); i++) {
+        const edge = z + i * 0.17;
+        beam(
+          [x - 0.135, top + 0.275, edge],
+          [x + 0.38, top + 0.34, edge],
+          0.045,
+          ["#cf946e", "#bd835d", "#da9e76"][i % 3],
+        );
+      }
+      const front = x - 0.3;
+      for (let i = 0; i <= bays * 5; i++) {
+        const Z = z + (i * width) / (bays * 5);
+        box(front, floor + 0.07, Z, 0.027, 0.55, 0.027, "#3c5550");
+      }
+      box(front, floor + 0.57, z, 0.05, 0.053, width + 0.03, "#4c6158");
+      box(front, floor + 0.23, z, 0.035, 0.032, width, "#657468");
+      box(
+        front - 0.05,
+        floor - 0.06,
+        z - 0.06,
+        0.54,
+        0.12,
+        width + 0.12,
+        "#c9ab84",
+      );
+    }
+    gallery(6 * tileSize - 0.015, 3.04 * tileSize, roofHeight(6, 3) + 0.03, 2);
+    gallery(14 * tileSize - 0.02, 6.08 * tileSize, roofHeight(14, 6) + 0.03, 2);
+    gallery(
+      10 * tileSize - 0.02,
+      16.05 * tileSize,
+      roofHeight(10, 16) + 0.03,
+      2,
+    );
+
+    function floweringVine(x, y, z, length) {
+      for (let strand = 0; strand < 13; strand++) {
+        const offset = (strand / 12 - 0.5) * 1.4,
+          drop = length * (0.22 + 0.78 * random());
+        const stem = (t) => [
+          x - 0.09 * Math.sin(t * 3),
+          y - t * drop,
+          z + offset + 0.095 * Math.sin(strand + t * 5),
+        ];
+        beam(stem(0), stem(0.55), 0.015, "#726c46");
+        beam(stem(0.55), stem(1), 0.01, "#686749");
+        for (let j = 0; j < 13; j++) {
+          const [X, Y, Z] = stem(j / 13),
+            leaf = 0.07 + random() * 0.065;
+          const dz = (random() - 0.5) * 0.23,
+            a = [X - 0.025, Y, Z + dz];
+          quad(
+            a,
+            [X - 0.07, Y + 0.07, Z + dz + leaf],
+            [X - 0.09, Y - 0.03, Z + dz + leaf * 1.5],
+            [X - 0.055, Y - 0.055, Z + dz + leaf * 0.45],
+            0,
+            ["#50694b", "#6d8254", "#81915e"][j % 3],
+          );
+          if (random() < 0.58) {
+            const zz = Z + dz - 0.02,
+              yy = Y + 0.03,
+              scale = 0.045 + random() * 0.045;
+            const tilt = random() * Math.PI;
+            for (let petal = 0; petal < 3; petal++) {
+              const angle = tilt + petal * 2.094,
+                cy = Math.sin(angle),
+                cz = Math.cos(angle);
+              const tip = [X - 0.13, yy + cy * scale, zz + cz * scale];
+              const left = [
+                X - 0.115,
+                yy + (cy * 0.48 + cz * 0.27) * scale,
+                zz + (cz * 0.48 - cy * 0.27) * scale,
+              ];
+              const right = [
+                X - 0.117,
+                yy + (cy * 0.48 - cz * 0.25) * scale,
+                zz + (cz * 0.48 + cy * 0.25) * scale,
+              ];
+              quad(
+                [X - 0.11, yy, zz],
+                left,
+                tip,
+                right,
+                0,
+                ["#a64664", "#d27385", "#c15b75", "#df99a2"][
+                  (strand + j + petal) % 4
+                ],
+              );
+            }
+          }
+        }
+      }
+    }
+    floweringVine(
+      6 * tileSize - 0.37,
+      roofHeight(6, 3) + 0.62,
+      3.21 * tileSize,
+      0.94,
+    );
+    floweringVine(
+      14 * tileSize - 0.37,
+      roofHeight(14, 6) + 0.58,
+      6.61 * tileSize,
+      1.18,
+    );
+    // Harbor crane beyond the playable streets, with a trolley and hanging hook.
+    function dockCrane(x, z, height) {
+      const iron = "#59736f",
+        lit = "#83988a",
+        rust = "#aa7d56";
+      for (const dx of [-0.8, 0.8])
+        for (const dz of [-0.8, 0.8]) {
+          beam([x + dx, 0, z + dz], [x + dx, height, z + dz], 0.1, iron);
+          for (let y = 1; y < height - 1.8; y += 1.8) {
+            beam([x + dx, y, z + dz], [x - dx, y + 1.8, z + dz], 0.043, lit);
+            beam([x + dx, y, z + dz], [x + dx, y + 1.8, z - dz], 0.043, lit);
+          }
+        }
+      for (const dx of [-0.52, 0.52]) {
+        const bottom = (t) => [x + dx, height + 0.06, z + t];
+        const top = (t) => [x + dx, height + 1.18, z + t];
+        beam(bottom(-6), bottom(8), 0.09, iron);
+        beam(top(-6), top(8), 0.07, lit);
+        for (let j = -6; j < 8; j++) {
+          beam(bottom(j), top(j + 1), 0.05, lit);
+          beam(top(j + 1), bottom(j + 1), 0.035, iron);
+        }
+      }
+      box(x - 0.75, height - 1.03, z - 1.65, 1.48, 1.08, 1.55, "#b79a72");
+      box(x - 0.78, height - 0.84, z - 1.48, 0.05, 0.58, 1.15, "#526e71");
+      box(x - 0.7, height - 0.14, z - 5.7, 1.4, 1.22, 2.15, rust);
+      for (const dz of [4.9, 5.23])
+        beam([x, height, z + dz], [x, height - 2.9, z + dz], 0.022, "#536662");
+      box(x - 0.16, height - 2.95, z + 4.87, 0.32, 0.17, 0.42, "#947951");
+    }
+    dockCrane(18.0 * tileSize, 4.95 * tileSize, 8.2);
+
+    function tank(x, z, base) {
+      for (const dx of [-0.51, 0.51])
+        for (const dz of [-0.51, 0.51])
+          beam(
+            [x + dx, base, z + dz],
+            [x + dx, base + 1.4, z + dz],
+            0.048,
+            "#526664",
+          );
+      for (const dz of [-0.51, 0.51]) {
+        beam(
+          [x - 0.51, base + 0.06, z + dz],
+          [x + 0.51, base + 1.26, z + dz],
+          0.033,
+          "#62746b",
+        );
+        beam(
+          [x + 0.51, base + 0.06, z + dz],
+          [x - 0.51, base + 1.26, z + dz],
+          0.033,
+          "#62746b",
+        );
+      }
+      box(x - 0.7, base + 1.21, z - 0.7, 1.4, 0.08, 1.4, "#606e63");
+      const ring = (i, h, r) => [
+        x + Math.cos((i * Math.PI) / 8) * r,
+        h,
+        z + Math.sin((i * Math.PI) / 8) * r,
+      ];
+      for (let i = 0; i < 16; i++) {
+        quad(
+          ring(i, base + 2.45, 0.8),
+          ring(i + 1, base + 2.45, 0.8),
+          ring(i + 1, base + 1.28, 0.8),
+          ring(i, base + 1.28, 0.8),
+          11,
+        );
+        quad(
+          ring(i, base + 2.45, 0.85),
+          ring(i + 1, base + 2.45, 0.85),
+          [x, base + 2.72, z],
+          [x, base + 2.72, z],
+          0,
+          "#a9b2a2",
+        );
+      }
+    }
+    tank(7.55 * tileSize, 2.62 * tileSize, roofHeight(7, 2));
+    tank(14.6 * tileSize, 5.4 * tileSize, roofHeight(14, 5));
+    for (const [x, z, h] of [
+      [6.1, 2.7, 6.2],
+      [7.6, 1.7, 7.3],
+      [13.6, 3.5, 6.9],
+      [15.1, 6.5, 6.4],
+      [3.7, 5.6, 5.8],
+      [11.5, 10.4, 7],
+      [2.4, 12.5, 6.5],
+      [16.2, 13.4, 6.6],
+      [10.6, 16.2, 7.4],
+    ])
+      palm(x * tileSize, z * tileSize, h);
+    function cable(a, b, sag) {
+      let prev = a;
+      for (let i = 1; i <= 13; i++) {
+        const t = i / 13,
+          p = a.map(
+            (val, j) =>
+              val + (b[j] - val) * t - (j === 1 ? 4 * t * (1 - t) * sag : 0),
+          );
+        beam(prev, p, 0.014, "#474e47");
+        prev = p;
+      }
+    }
+    for (const [a, b] of [
+      [
+        [7, 6],
+        [6, 3],
+      ],
+      [
+        [10, 5],
+        [7, 3],
+      ],
+      [
+        [14, 5],
+        [10, 2],
+      ],
+      [
+        [7, 9],
+        [3, 8],
+      ],
+      [
+        [15, 12],
+        [11, 10],
+      ],
+    ]) {
+      const A = [a[0] * tileSize, 4.9, a[1] * tileSize],
+        B = [b[0] * tileSize, 5.55, b[1] * tileSize];
+      beam([A[0], 0, A[2]], A, 0.062, "#786a51");
+      beam([B[0], 0, B[2]], B, 0.062, "#786a51");
+      cable(A, B, 0.6);
+      cable([A[0], 4.6, A[2]], [B[0], 5.3, B[2]], 0.78);
+    }
+    // A painted overhead sign and rooftop cargo mark the approach down the main lane.
+    const gx = 12.9 * tileSize,
+      gz = 4 * tileSize;
+    box(gx, 3.0, gz - 0.5, 0.14, 0.12, 3.5, "#54635c");
+    beam([gx, 3.1, gz + 2.8], [gx, 0, gz + 2.8], 0.068, "#657069");
+    quad(
+      [gx - 0.02, 3.8, gz + 0.15],
+      [gx - 0.02, 3.8, gz + 2.35],
+      [gx - 0.02, 3.12, gz + 2.35],
+      [gx - 0.02, 3.12, gz + 0.15],
+      12,
+    );
+    // Sandstone aprons distinguish the loading doors from the cobbled road.
+    for (const [x, z, length] of [
+      [3.1, 4.73, 4.85],
+      [10.15, 2.73, 2.65],
+      [2.1, 11.73, 1.75],
+    ]) {
+      const X = x * tileSize,
+        Z = z * tileSize,
+        end = X + length * tileSize;
+      quad(
+        [X, 0.008, Z],
+        [end, 0.008, Z],
+        [end, 0.008, Z + 0.27 * tileSize],
+        [X, 0.008, Z + 0.27 * tileSize],
+        14,
+        "#fffaf0",
+        [length * 1.5, 0.43],
+      );
+    }
+    // Paint and drainage hardware sit flush with the paving along the loading bays.
+    function paving(x, z, w, d, color) {
+      quad(
+        [x, 0.012, z],
+        [x + w, 0.012, z],
+        [x + w, 0.012, z + d],
+        [x, 0.012, z + d],
+        0,
+        color,
+      );
+    }
+    for (const [x, z] of [
+      [4.7, 4.83],
+      [8.2, 4.83],
+      [12, 3.93],
+      [13.1, 8.83],
+      [6.4, 11.85],
+    ]) {
+      const X = x * tileSize,
+        Z = z * tileSize;
+      paving(X, Z, 0.76, 0.28, "#746f60");
+      for (let i = 0; i < 10; i++)
+        quad(
+          [X + 0.04 + i * 0.07, 0.018, Z + 0.025],
+          [X + 0.064 + i * 0.07, 0.018, Z + 0.025],
+          [X + 0.064 + i * 0.07, 0.018, Z + 0.255],
+          [X + 0.04 + i * 0.07, 0.018, Z + 0.255],
+          0,
+          "#424a44",
+        );
+    }
+    for (let i = 0; i < 12; i++) {
+      paving(
+        (3.8 + i * 0.34) * tileSize,
+        4.68 * tileSize,
+        0.45,
+        0.055,
+        "#ddbd65",
+      );
+    }
+    paving(4.35 * tileSize, 4.68 * tileSize, 0.055, 0.62, "#ddbd65");
+    paving(6.65 * tileSize, 4.68 * tileSize, 0.055, 0.62, "#ddbd65");
+    crate(7.9 * tileSize, 3.88 * tileSize, 1.05, 1.08, 0.83);
+    crate(13.83 * tileSize, 4.69 * tileSize, 0.86, 0.95, 0.69);
+    crate(8.25 * tileSize, 12.02 * tileSize, 1.16, 0.92, 0.94);
+    crate(15.1 * tileSize, 15.1 * tileSize, 0.96, 1.05, 0.8);
+  }
   // Distant dunes close the horizon behind the playable depot.
   for (let i = 0; i < 96; i++) {
     const a = (i * Math.PI) / 48,
@@ -978,7 +1011,7 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
     void main(){float idx=floor(vMat.z+.5);
       if(idx>15.5){
         vec3 dir=normalize(vPos-camera);
-        vec3 sky=mix(vec3(.94,.88,.74),vec3(.36,.62,.73),smoothstep(-.04,.55,dir.y));
+        vec3 sky=mix(${sandport ? "vec3(.94,.88,.74)" : cold ? "vec3(.88,.94,.97)" : "vec3(.96,.77,.61)"},${sandport ? "vec3(.36,.62,.73)" : cold ? "vec3(.32,.54,.72)" : "vec3(.42,.47,.60)"},smoothstep(-.04,.55,dir.y));
         vec2 cloud=dir.xz/max(.055,dir.y)*vec2(1.2,2.2);
         float wisps=noise(cloud)*.6+noise(cloud*2.1)*.28+noise(cloud*4.2)*.12;
         sky=mix(sky,vec3(.96,.92,.82),smoothstep(.54,.77,wisps)*.55*smoothstep(.02,.14,dir.y));
@@ -1030,10 +1063,11 @@ function createDepot(canvas, map, tileSize, onMaterialsReady) {
       if (error.name !== "SecurityError") throw error;
     }
   }
-  detailedAtlas
-    .decode()
-    .then(installMaterials)
-    .catch(() => {});
+  if (sandport)
+    detailedAtlas
+      .decode()
+      .then(installMaterials)
+      .catch(() => {});
   const anisotropy = gl.getExtension("EXT_texture_filter_anisotropic");
   if (anisotropy)
     gl.texParameterf(

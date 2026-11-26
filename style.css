@@ -310,3 +310,48 @@ kbd {
     margin: 2px 0;
   }
 }
+
+#map-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+#map-nav span {
+  color: #bbc1b4;
+  font: 12px var(--mono);
+  margin: 0 10px 0 0;
+}
+#map-nav a {
+  text-decoration: none;
+  color: #d1d7cc;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 7px 13px;
+  border: 1px solid #4b5148;
+  border-radius: 2px;
+}
+#map-nav a:hover,
+#map-nav a:focus-visible {
+  border-color: var(--acid);
+  color: var(--acid);
+}
+#map-nav a[aria-current] {
+  color: #191f15;
+  background: var(--acid);
+  border-color: var(--acid);
+}
+@media (max-width: 680px) {
+  #map-nav {
+    padding: 0 12px;
+    gap: 4px;
+  }
+  #map-nav a {
+    font-size: 12px;
+    padding: 5px 7px;
+  }
+  #map-nav span {
+    margin-right: 3px;
+  }
+}
