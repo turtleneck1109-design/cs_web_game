@@ -14,28 +14,9 @@ const TILE = 2.75;
 const PROJ = W / (2 * Math.tan(FOV / 2));
 const MAX_DIST = 24;
 
-const worldMap = [
-  "####################",
-  "#..#......#.......##",
-  "#..#..##..#........#",
-  "#.....##.....###...#",
-  "#.............#....#",
-  "#.######..#...#....#",
-  "#.#....#..#...###..#",
-  "#.#....#......#....#",
-  "#.#....####...#....#",
-  "#......#......#....#",
-  "###....#...##.#....#",
-  "#......#...##.#....#",
-  "#..##.........#....#",
-  "#..##..####...#....#",
-  "#......#......#....#",
-  "#...#..#..#...#....#",
-  "#...#.....#........#",
-  "#.........#........#",
-  "##.............#...#",
-  "####################",
-];
+const mapId = new URLSearchParams(location.search).get("map");
+const scene = Object.hasOwn(arenas, mapId) ? arenas[mapId] : arenas.sandport;
+const worldMap = scene.grid;
 
 const MAP_W = worldMap[0].length;
 const MAP_H = worldMap.length;
@@ -68,7 +49,7 @@ costume
 const worldCanvas = document.getElementById("world");
 let depot = null;
 try {
-  depot = createDepot(worldCanvas, worldMap, TILE, () => {
+  depot = createDepot(worldCanvas, scene, TILE, () => {
     lastView.width = 0;
     needsFrame = true;
   });
@@ -372,18 +353,7 @@ function enemyScreenData(enemy) {
 
 function spawnEnemies() {
   enemies.length = 0;
-  const spots = [
-    [9.4, 4.42],
-    [7.62, 5.25, true],
-    [11.8, 7.4],
-    [15.4, 9.7],
-    [7.2, 12.3],
-    [11.24, 10.73, true],
-    [16.2, 16.1],
-    [9.8, 17.1],
-  ];
-
-  for (const [x, z, perched = false] of spots) {
+  for (const [x, z, perched = false] of scene.targets) {
     const heading = rand(-Math.PI, Math.PI);
     enemies.push({
       x,
@@ -421,9 +391,7 @@ function showHitText(text) {
 }
 
 function resetGame() {
-  player.x = 2.9;
-  player.z = 4.18;
-  player.yaw = -0.1;
+  [player.x, player.z, player.yaw] = scene.start;
   player.pitch = 0.045;
   player.hp = 100;
   player.ammo = 30;
@@ -444,8 +412,8 @@ function resetGame() {
 
   setScreen(
     "ready",
-    "沙港训练场",
-    "在 100 秒内清除场内的 8 个目标。",
+    scene.name,
+    scene.route + "。在 100 秒内清除 8 个目标。",
     "进入训练",
   );
   document.getElementById("controls").open = false;
@@ -729,9 +697,9 @@ function renderFallback() {
   const horizonY = clamp(H * 0.5 + pitchOffset, 0, H);
 
   const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
-  sky.addColorStop(0, "#8cbec8");
-  sky.addColorStop(0.52, "#b1d1ce");
-  sky.addColorStop(1, "#ead4ae");
+  sky.addColorStop(0, scene.sky[0]);
+  sky.addColorStop(0.52, scene.sky[1]);
+  sky.addColorStop(1, scene.sky[2]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, horizonY);
 
@@ -751,9 +719,9 @@ function renderFallback() {
   ctx.fillRect(W * 0.65, horizonY * 0.31, W * 0.11, 5);
 
   const floor = ctx.createLinearGradient(0, horizonY, 0, H);
-  floor.addColorStop(0, "#c2af91");
-  floor.addColorStop(0.46, "#aa987f");
-  floor.addColorStop(1, "#998269");
+  floor.addColorStop(0, scene.ground[0]);
+  floor.addColorStop(0.46, scene.ground[1]);
+  floor.addColorStop(1, scene.ground[2]);
   ctx.fillStyle = floor;
   ctx.fillRect(0, horizonY, W, H - horizonY);
 
@@ -782,7 +750,7 @@ function renderFallback() {
     const shadeBase = hit.side === 0 ? 182 : 142;
     const distDark = clamp(1 - corrected / MAX_DIST, 0.22, 1);
     const c = Math.floor(shadeBase * distDark);
-    ctx.fillStyle = `rgb(${c + 36}, ${c + 13}, ${c - 17})`;
+    ctx.fillStyle = `rgb(${c + scene.wall[0]}, ${c + scene.wall[1]}, ${c + scene.wall[2]})`;
     ctx.fillRect(x, yTop, stripe + 1, wallH);
     ctx.fillStyle = "rgba(245,223,189,.5)";
     ctx.fillRect(x, yTop + wallH * 0.035, stripe + 1, wallH * 0.035);
@@ -1120,7 +1088,7 @@ function setScreen(mode, title, info, button) {
   }
   slowFrames = 0;
   missionLabel.textContent =
-    mode === "ready" ? "训练地图 / SANDPORT" : "沙港训练场 / SANDPORT";
+    (mode === "ready" ? "训练地图" : scene.name) + " / " + scene.code;
   missionTitle.textContent = title;
   missionInfo.textContent = info;
   startButton.firstChild.textContent = button + " ";
@@ -1201,5 +1169,16 @@ restartBtn.addEventListener("click", () => {
   if (document.pointerLockElement === canvas) document.exitPointerLock();
   resetGame();
 });
+const mapNav = document.getElementById("map-nav");
+for (const [key, map] of Object.entries(arenas)) {
+  const link = document.createElement("a");
+  link.href = "?map=" + key;
+  link.textContent = map.name;
+  if (map === scene) link.setAttribute("aria-current", "page");
+  mapNav.append(link);
+}
+document.title = scene.name + " · Mini CS";
+arena.setAttribute("aria-label", scene.name);
+document.getElementById("current-map").textContent = scene.name;
 resetGame();
 requestAnimationFrame(loop);
