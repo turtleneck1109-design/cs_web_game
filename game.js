@@ -101,6 +101,7 @@ const player = {
 };
 
 const enemies = [];
+let previousStart;
 const depthBuffer = new Float32Array(W);
 
 let pendingLock = false;
@@ -365,9 +366,9 @@ function enemyScreenData(enemy) {
   };
 }
 
-function spawnEnemies() {
+function spawnEnemies(targets) {
   enemies.length = 0;
-  for (const [x, z, perched = false] of scene.targets) {
+  for (const [x, z, perched = false] of targets) {
     const heading = rand(-Math.PI, Math.PI);
     enemies.push({
       x,
@@ -405,7 +406,9 @@ function showHitText(text) {
 }
 
 function resetGame() {
-  [player.x, player.z, player.yaw] = scene.start;
+  const { start, targets } = chooseRoundSpawns(scene, previousStart);
+  previousStart = start;
+  [player.x, player.z, player.yaw] = start;
   player.pitch = 0.045;
   player.hp = 100;
   player.ammo = 30;
@@ -421,7 +424,7 @@ function resetGame() {
   state.hitTextTimer = 0;
 
   smoke.reset();
-  spawnEnemies();
+  spawnEnemies(targets);
   updateHud();
 
   setScreen(

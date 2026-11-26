@@ -25,16 +25,35 @@ const arenas = {
       "##.............#...#",
       "####################",
     ],
-    start: [2.9, 4.18, -0.1],
+    starts: [
+      [2.9, 4.18, -0.1],
+      [17.5, 4.4, 1.59],
+      [2.4, 16.9, -1.53],
+      [12.45, 15.4, -1.49],
+      [5.6, 9.35, 1.52],
+    ],
     targets: [
-      [9.4, 4.42],
+      [9.0, 4.2],
       [7.62, 5.25, true],
       [11.8, 7.4],
       [15.4, 9.7],
       [7.2, 12.3],
-      [11.24, 10.73, true],
+      [12.62, 10.27, true],
       [16.2, 16.1],
       [9.65, 17.4],
+      [3.6, 7.5],
+      [5.5, 1.5],
+      [12.4, 4.5],
+      [16.6, 3.5],
+      [4.6, 10.55],
+      [8.6, 15.5],
+      [2.5, 14.5],
+      [12.45, 13.55],
+      [16.5, 12.4],
+      [3.25, 12.23, true],
+      [7.25, 14.45, true],
+      [10.33, 5.24, true],
+      [14.72, 12.32, true],
     ],
     sky: ["#8cbec8", "#b1d1ce", "#ead4ae"],
     ground: ["#c2af91", "#aa987f", "#998269"],
@@ -66,7 +85,13 @@ const arenas = {
       "#..................#",
       "####################",
     ],
-    start: [2.4, 4.55, 0.045],
+    starts: [
+      [2.4, 4.55, 0.045],
+      [17.7, 10.45, 3.1],
+      [2.45, 17.5, -0.09],
+      [14.6, 15.4, -1.61],
+      [8.8, 8.45, -1.54],
+    ],
     targets: [
       [9.6, 4.4],
       [7.22, 6.18, true],
@@ -76,6 +101,18 @@ const arenas = {
       [7.5, 14.6],
       [16.6, 17.1],
       [3.5, 17.5],
+      [3.55, 3.7],
+      [6.45, 8.45],
+      [10.4, 2.5],
+      [15.45, 4.4],
+      [2.6, 13.55],
+      [12.6, 14.7],
+      [18.3, 8.5],
+      [9.5, 17.4],
+      [3.32, 6.22, true],
+      [12.65, 2.26, true],
+      [15.55, 6.24, true],
+      [5.5, 16.7, true],
     ],
     sky: ["#8795ab", "#dfb9a8", "#f6cf9f"],
     ground: ["#997e6c", "#81746b", "#5e5d60"],
@@ -107,7 +144,13 @@ const arenas = {
       "#..................#",
       "####################",
     ],
-    start: [3.2, 4.45, 0.4],
+    starts: [
+      [3.2, 4.45, 0.4],
+      [12.3, 17.4, -1.73],
+      [17.5, 12.45, 3.05],
+      [2.4, 10.45, 0.1],
+      [11.4, 3.55, 1.5],
+    ],
     targets: [
       [9.5, 5.7],
       [5.68, 7.2, true],
@@ -117,9 +160,37 @@ const arenas = {
       [11.8, 15.7],
       [16.8, 13.2],
       [4.7, 17.6],
+      [2.6, 4.5],
+      [6.5, 2.45],
+      [16.55, 4.6],
+      [17.85, 8.25],
+      [2.5, 10.5],
+      [6.6, 15.55],
+      [12.55, 11.55],
+      [15.45, 17.55],
+      [3.23, 12.25, true],
+      [13.4, 2.22, true],
+      [16.72, 9.5, true],
+      [9.65, 14.72, true],
     ],
     sky: ["#739ebd", "#b9d9ea", "#e5eef2"],
     ground: ["#eff4f2", "#c8dce4", "#aabfc9"],
     wall: [0, 23, 36],
   },
 };
+
+// Each map supplies spaced, reachable placements and a clear facing for every player start.
+function chooseRoundSpawns(scene, previousStart) {
+  const starts = scene.starts.filter((start) => start !== previousStart);
+  const start = starts[Math.floor(Math.random() * starts.length)];
+  const candidates = scene.targets.filter(
+    ([x, z]) => Math.hypot(x - start[0], z - start[1]) >= 4.5,
+  );
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const ground = candidates.filter(([, , perched]) => !perched).slice(0, 6);
+  const guards = candidates.filter(([, , perched]) => perched).slice(0, 2);
+  return { start, targets: [...ground, ...guards] };
+}
