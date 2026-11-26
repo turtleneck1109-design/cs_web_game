@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>沙港训练场 · Mini CS</title>
-    <link rel="stylesheet" href="style.css?v=arenas" />
+    <link rel="stylesheet" href="style.css?v=radar-option" />
   </head>
   <body>
     <main>
@@ -46,6 +46,10 @@
             <div class="eyebrow" id="mission-label">训练地图 / SANDPORT</div>
             <h1 id="mission-title">沙港训练场</h1>
             <p id="mission-info">在 100 秒内清除场内的 8 个目标。</p>
+            <label class="radar-option">
+              <input type="checkbox" id="show-radar-enemies" checked />
+              小地图显示敌人
+            </label>
             <button id="start">
               进入训练 <span aria-hidden="true">→</span>
             </button>
@@ -86,6 +90,6 @@
     <script src="opponent-motion.js?v=rooftop-radar"></script>
     <script src="opponent-model.js?v=rooftop-radar"></script>
     <script src="smoke.js?v=1"></script>
-    <script src="game.js?v=arenas"></script>
+    <script src="game.js?v=radar-option"></script>
   </body>
 </html>

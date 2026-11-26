@@ -31,6 +31,20 @@ const state = {
 };
 
 const arena = document.getElementById("arena");
+const radarEnemyToggle = document.getElementById("show-radar-enemies");
+const radarEnemyKey = "mini-cs.show-radar-enemies";
+try {
+  radarEnemyToggle.checked = localStorage.getItem(radarEnemyKey) !== "false";
+} catch {
+  // Storage can be unavailable for a local file or in a restricted browser.
+}
+radarEnemyToggle.addEventListener("change", () => {
+  try {
+    localStorage.setItem(radarEnemyKey, String(radarEnemyToggle.checked));
+  } catch {
+    // The checkbox still controls this round when saving is unavailable.
+  }
+});
 const startButton = document.getElementById("start");
 const reserveEl = document.getElementById("reserve");
 const healthBar = document.getElementById("health-bar");
@@ -929,25 +943,27 @@ function renderMiniMap() {
   ctx.arc(0, 0, radius, -Math.PI / 2 - FOV / 2, -Math.PI / 2 + FOV / 2);
   ctx.closePath();
   ctx.fill();
-  for (const e of enemies) {
-    if (!e.alive || (e.perched && !e.spotted) || smoke.obscures(e)) continue;
-    const dx = e.x - player.x,
-      dz = e.z - player.z;
-    const x = (-sin * dx + cos * dz) * scale,
-      y = -(cos * dx + sin * dz) * scale;
-    const factor = Math.min(1, (radius - 5) / (Math.hypot(x, y) || 1));
-    ctx.save();
-    ctx.translate(x * factor, y * factor);
-    ctx.fillStyle = "#ffa17c";
-    ctx.beginPath();
-    if (e.perched) {
-      ctx.moveTo(0, -4.5);
-      ctx.lineTo(4, 3);
-      ctx.lineTo(-4, 3);
-      ctx.closePath();
-    } else ctx.arc(0, 0, factor < 1 ? 1.9 : 2.7, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.restore();
+  if (radarEnemyToggle.checked) {
+    for (const e of enemies) {
+      if (!e.alive || (e.perched && !e.spotted) || smoke.obscures(e)) continue;
+      const dx = e.x - player.x,
+        dz = e.z - player.z;
+      const x = (-sin * dx + cos * dz) * scale,
+        y = -(cos * dx + sin * dz) * scale;
+      const factor = Math.min(1, (radius - 5) / (Math.hypot(x, y) || 1));
+      ctx.save();
+      ctx.translate(x * factor, y * factor);
+      ctx.fillStyle = "#ffa17c";
+      ctx.beginPath();
+      if (e.perched) {
+        ctx.moveTo(0, -4.5);
+        ctx.lineTo(4, 3);
+        ctx.lineTo(-4, 3);
+        ctx.closePath();
+      } else ctx.arc(0, 0, factor < 1 ? 1.9 : 2.7, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.restore();
+    }
   }
   ctx.fillStyle = "#f0f392";
   ctx.strokeStyle = "#273328";
